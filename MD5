@@ -1,0 +1,15 @@
+18c869872d0b62c09eb3ff948b8de690 *DESCRIPTION
+091822209e315fe51cf308aa427f4ac2 *LICENSE
+a328e737f0df066a458a21b705b2078d *NAMESPACE
+8bd9a7230ae8dd5863daf616754c32ca *NEWS.md
+cf03f7a6fb371f02ec424af65c75a2d1 *R/did_funcs.R
+838ead712226c1b2718ffa36108e15e7 *R/fetwfe.R
+c366ad5cd1151bbd96179adead62e578 *README.md
+0698fc999303f77ce20f1fe7f6066fcd *build/vignette.rds
+7e9558873754bc6fcd0ac165a91a9c0c *inst/CITATION
+6f18e6d8dd16ed9f6db17811d4ad858d *inst/doc/vignette.R
+f65f6098e98188c037ae9a174fee4338 *inst/doc/vignette.Rmd
+b865a008e162274152fd12514b0124a9 *inst/doc/vignette.html
+80ca502103676541244b9927630e7a22 *man/fetwfe.Rd
+1b13752cd3d944ebe3e5f5425935cfe1 *tests/testthat/test-fetwfe.R
+f65f6098e98188c037ae9a174fee4338 *vignettes/vignette.Rmd
