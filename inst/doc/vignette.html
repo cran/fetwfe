@@ -12,7 +12,7 @@
 
 <meta name="author" content="Gregory Faletto" />
 
-<meta name="date" content="2025-02-20" />
+<meta name="date" content="2025-05-14" />
 
 <title>fetwfe: A Package for Fused Extended Two-Way Fixed Effects</title>
 
@@ -50,8 +50,9 @@ overflow: visible;
 }
 </style>
 <style type="text/css" data-origin="pandoc">
+html { -webkit-text-size-adjust: 100%; }
 pre > code.sourceCode { white-space: pre; position: relative; }
-pre > code.sourceCode > span { line-height: 1.25; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
 pre > code.sourceCode > span:empty { height: 1.2em; }
 .sourceCode { overflow: visible; }
 code.sourceCode > span { color: inherit; text-decoration: inherit; }
@@ -62,7 +63,7 @@ div.sourceCode { overflow: auto; }
 }
 @media print {
 pre > code.sourceCode { white-space: pre-wrap; }
-pre > code.sourceCode > span { display: inline-block; text-indent: -5em; padding-left: 5em; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
 }
 pre.numberSource code
 { counter-reset: source-line 0; }
@@ -341,7 +342,7 @@ code > span.er { color: #a61717; background-color: #e3d2d2; }
 <h1 class="title toc-ignore">fetwfe: A Package for Fused Extended
 Two-Way Fixed Effects</h1>
 <h4 class="author">Gregory Faletto</h4>
-<h4 class="date">2025-02-20</h4>
+<h4 class="date">2025-05-14</h4>
 
 
 <div id="TOC">
@@ -379,11 +380,11 @@ you’d like.</p>
 <h2>Background</h2>
 <p>This vignette is written under the assumption that you’re at least
 vaguely familiar with developments in <a href="https://en.wikipedia.org/wiki/Difference_in_differences">difference-in-differences</a>
-with <a href="https://bookdown.org/mike/data_analysis/difference-in-differences.html#staggered-dif-n-dif">staggered
+with <a href="https://bookdown.org/mike/data_analysis/sec-difference-in-differences.html#sec-multiple-periods-and-variation-in-treatment-timing">staggered
 adoptions</a> since about 2018. Just to make sure we’re on the same
 page, the brief recap is:</p>
 <ul>
-<li>Historically, under staggered adoptions researchers used the <a href="https://bookdown.org/mike/data_analysis/two-way-fixed-effects.html">standard
+<li>Historically, under staggered adoptions researchers used the <a href="https://bookdown.org/mike/data_analysis/sec-difference-in-differences.html#sec-two-way-fixed-effects">standard
 two-way fixed effects estimator</a> and interpreted the coefficient on
 the treatment dummy as an average treatment effect on the treated
 units.</li>
@@ -391,12 +392,13 @@ units.</li>
 estimator was doing and found that in fact, this coefficient was not any
 kind of reasonable average treatment effect estimator.</li>
 <li>Since then, a number of new difference-in-differences estimators
-that are unbiased under staggered adoptions have been developed.</li>
+that are asymptotically unbiased under staggered adoptions have been
+developed.</li>
 </ul>
 <p>The estimator in this package, fused extended two-way fixed effects
-(FETWFE), is one of those unbiased estimators. Of course, I made this
-estimator because I think FETWFE brings something to the table that the
-others don’t. Here’s a brief summary on that:</p>
+(FETWFE), is one of those asymptotically unbiased estimators. Of course,
+I made this estimator because I think FETWFE brings something to the
+table that the others don’t. Here’s a brief summary on that:</p>
 <p>One issue with these estimators has been that they’ve worked so hard
 to be unbiased that they are <strong>inefficient</strong> (in the
 language of econometrics), or <strong>high-variance</strong> (in the
@@ -406,14 +408,16 @@ less data per parameter and your estimates are noisier.</p>
 <p>In machine learning, creating a more flexible estimator with lots of
 parameters and then finding that it is too high variance (that is, it
 <em>overfits</em>) is a familiar issue. The most common solution has
-been <strong>regularization</strong>.</p>
+been regularization.</p>
 <p>You could just add <span class="math inline">\(\ell_2\)</span> or
 <span class="math inline">\(\ell_1\)</span> regularization to a
 difference-in-differences regression estimator and probably see an
 improvement in your efficiency, but FETWFE does something more
 sophisticated than that. (Plus, that approach wouldn’t allow you to get
 valid standard errors for your treatment effect estimates, but FETWFE
-does.)</p>
+does.) Qualitatively, FETWFE uses machine learning to learn which of
+these added parameters were actually unnecessary to add, and then takes
+them back out in order to improve efficiency.</p>
 <p>That’s all the description I’ll give you in this vignette. You can
 learn all of the details in the paper on arXiv:</p>
 <blockquote>
@@ -456,10 +460,11 @@ specifying the unit (e.g. state, firm) variable.</li>
 <li><strong><code>treatment</code></strong>: A character string
 specifying the treatment indicator variable (which must be an absorbing
 binary indicator).</li>
-<li><strong><code>covs</code></strong>: A character vector of covariate
-names (typically time-invariant or the pre-treatment values).</li>
 <li><strong><code>response</code></strong>: A character string
 specifying the response (outcome) variable.</li>
+<li><strong><code>covs</code></strong>: A character vector of covariate
+names (typically time-invariant or the pre-treatment values), if
+applicable.</li>
 <li><strong>Additional tuning parameters:</strong> such as the tuning
 parameter for the bridge penalty (controlled via argument
 <code>q</code>) and options for verbosity, standard error calculation,
@@ -491,50 +496,43 @@ estimators</a>. Thanks for sharing the code publicly!</strong></p>
 <div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a><span class="co"># Set seed for reproducibility</span></span>
 <span id="cb1-2"><a href="#cb1-2" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">123456</span><span class="dt">L</span>)</span>
 <span id="cb1-3"><a href="#cb1-3" tabindex="-1"></a></span>
-<span id="cb1-4"><a href="#cb1-4" tabindex="-1"></a><span class="co"># 60 time periods, 30 individuals, and 5 waves of treatment</span></span>
-<span id="cb1-5"><a href="#cb1-5" tabindex="-1"></a>tmax <span class="ot">=</span> <span class="dv">60</span>; imax <span class="ot">=</span> <span class="dv">30</span>; nlvls <span class="ot">=</span> <span class="dv">5</span></span>
+<span id="cb1-4"><a href="#cb1-4" tabindex="-1"></a><span class="co"># 20 time periods, 30 individuals, and 5 waves of treatment</span></span>
+<span id="cb1-5"><a href="#cb1-5" tabindex="-1"></a>tmax <span class="ot">=</span> <span class="dv">20</span>; imax <span class="ot">=</span> <span class="dv">30</span>; nlvls <span class="ot">=</span> <span class="dv">5</span></span>
 <span id="cb1-6"><a href="#cb1-6" tabindex="-1"></a></span>
 <span id="cb1-7"><a href="#cb1-7" tabindex="-1"></a>dat <span class="ot">=</span> </span>
 <span id="cb1-8"><a href="#cb1-8" tabindex="-1"></a>  <span class="fu">expand.grid</span>(<span class="at">time =</span> <span class="dv">1</span><span class="sc">:</span>tmax, <span class="at">id =</span> <span class="dv">1</span><span class="sc">:</span>imax) <span class="sc">|&gt;</span></span>
 <span id="cb1-9"><a href="#cb1-9" tabindex="-1"></a>  <span class="fu">within</span>({</span>
 <span id="cb1-10"><a href="#cb1-10" tabindex="-1"></a>    </span>
-<span id="cb1-11"><a href="#cb1-11" tabindex="-1"></a>    <span class="co"># Generate time-invariant covariates</span></span>
-<span id="cb1-12"><a href="#cb1-12" tabindex="-1"></a>    cov1 <span class="ot">=</span> <span class="fu">rep</span>(<span class="fu">runif</span>(imax, <span class="dv">0</span>, <span class="dv">1</span>), <span class="at">each =</span> tmax)  <span class="co"># Random uniform values (0, 1) per individual</span></span>
-<span id="cb1-13"><a href="#cb1-13" tabindex="-1"></a>    cov2 <span class="ot">=</span> <span class="fu">rep</span>(<span class="fu">sample</span>(<span class="dv">1</span><span class="sc">:</span><span class="dv">5</span>, imax, <span class="at">replace =</span> <span class="cn">TRUE</span>), <span class="at">each =</span> tmax)  <span class="co"># Random categorical values (1-5) per individual</span></span>
-<span id="cb1-14"><a href="#cb1-14" tabindex="-1"></a>    cov3 <span class="ot">=</span> <span class="fu">rep</span>(<span class="fu">rnorm</span>(imax, <span class="at">mean =</span> <span class="dv">0</span>, <span class="at">sd =</span> <span class="dv">1</span>), <span class="at">each =</span> tmax)  <span class="co"># Random Gaussian values (mean=0, sd=1) per individual</span></span>
-<span id="cb1-15"><a href="#cb1-15" tabindex="-1"></a>    </span>
-<span id="cb1-16"><a href="#cb1-16" tabindex="-1"></a>    <span class="co"># Initialize columns</span></span>
-<span id="cb1-17"><a href="#cb1-17" tabindex="-1"></a>    cohort      <span class="ot">=</span> <span class="cn">NA</span></span>
-<span id="cb1-18"><a href="#cb1-18" tabindex="-1"></a>    effect      <span class="ot">=</span> <span class="cn">NA</span></span>
-<span id="cb1-19"><a href="#cb1-19" tabindex="-1"></a>    first_treat <span class="ot">=</span> <span class="cn">NA</span></span>
-<span id="cb1-20"><a href="#cb1-20" tabindex="-1"></a>    </span>
-<span id="cb1-21"><a href="#cb1-21" tabindex="-1"></a>    <span class="cf">for</span> (chrt <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span>imax) {</span>
-<span id="cb1-22"><a href="#cb1-22" tabindex="-1"></a>      cohort <span class="ot">=</span> <span class="fu">ifelse</span>(id<span class="sc">==</span>chrt, <span class="fu">sample.int</span>(nlvls, <span class="dv">1</span>), cohort)</span>
-<span id="cb1-23"><a href="#cb1-23" tabindex="-1"></a>    }</span>
-<span id="cb1-24"><a href="#cb1-24" tabindex="-1"></a>    </span>
-<span id="cb1-25"><a href="#cb1-25" tabindex="-1"></a>    <span class="cf">for</span> (lvls <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span>nlvls) {</span>
-<span id="cb1-26"><a href="#cb1-26" tabindex="-1"></a>      effect      <span class="ot">=</span> <span class="fu">ifelse</span>(cohort<span class="sc">==</span>lvls, <span class="fu">sample</span>(<span class="dv">2</span><span class="sc">:</span><span class="dv">10</span>, <span class="dv">1</span>), effect)</span>
-<span id="cb1-27"><a href="#cb1-27" tabindex="-1"></a>      first_treat <span class="ot">=</span> <span class="fu">ifelse</span>(cohort<span class="sc">==</span>lvls, <span class="fu">sample</span>(<span class="dv">1</span><span class="sc">:</span>(tmax<span class="sc">+</span><span class="dv">20</span>), <span class="dv">1</span>), first_treat)</span>
-<span id="cb1-28"><a href="#cb1-28" tabindex="-1"></a>    }</span>
-<span id="cb1-29"><a href="#cb1-29" tabindex="-1"></a>    </span>
-<span id="cb1-30"><a href="#cb1-30" tabindex="-1"></a>    first_treat <span class="ot">=</span> <span class="fu">ifelse</span>(first_treat<span class="sc">&gt;</span>tmax, <span class="cn">Inf</span>, first_treat)</span>
-<span id="cb1-31"><a href="#cb1-31" tabindex="-1"></a>    treat       <span class="ot">=</span> time <span class="sc">&gt;=</span> first_treat</span>
-<span id="cb1-32"><a href="#cb1-32" tabindex="-1"></a>    rel_time    <span class="ot">=</span> time <span class="sc">-</span> first_treat</span>
-<span id="cb1-33"><a href="#cb1-33" tabindex="-1"></a>    y           <span class="ot">=</span> id <span class="sc">+</span> time <span class="sc">+</span> <span class="fu">ifelse</span>(treat, effect<span class="sc">*</span>rel_time, <span class="dv">0</span>) <span class="sc">+</span> cov1 <span class="sc">+</span> cov2 <span class="sc">+</span> cov3 <span class="sc">+</span> <span class="fu">rnorm</span>(imax<span class="sc">*</span>tmax)</span>
-<span id="cb1-34"><a href="#cb1-34" tabindex="-1"></a>    </span>
-<span id="cb1-35"><a href="#cb1-35" tabindex="-1"></a>    <span class="fu">rm</span>(chrt, lvls, cohort, effect)</span>
-<span id="cb1-36"><a href="#cb1-36" tabindex="-1"></a>  })</span>
-<span id="cb1-37"><a href="#cb1-37" tabindex="-1"></a></span>
-<span id="cb1-38"><a href="#cb1-38" tabindex="-1"></a><span class="fu">head</span>(dat)</span></code></pre></div>
-<pre><code>##   time id        y rel_time treat first_treat      cov3 cov2      cov1
-## 1    1  1 3.995163     -Inf FALSE         Inf 0.1582893    2 0.7977843
-## 2    2  1 7.215283     -Inf FALSE         Inf 0.1582893    2 0.7977843
-## 3    3  1 6.089467     -Inf FALSE         Inf 0.1582893    2 0.7977843
-## 4    4  1 8.205118     -Inf FALSE         Inf 0.1582893    2 0.7977843
-## 5    5  1 8.869905     -Inf FALSE         Inf 0.1582893    2 0.7977843
-## 6    6  1 9.463189     -Inf FALSE         Inf 0.1582893    2 0.7977843</code></pre>
-<p>The simulated data (<code>dat</code>) now has columns for time, id,
-covariates (<code>cov1</code>, <code>cov2</code>, <code>cov3</code>), a
+<span id="cb1-11"><a href="#cb1-11" tabindex="-1"></a>    cohort      <span class="ot">=</span> <span class="cn">NA</span></span>
+<span id="cb1-12"><a href="#cb1-12" tabindex="-1"></a>    effect      <span class="ot">=</span> <span class="cn">NA</span></span>
+<span id="cb1-13"><a href="#cb1-13" tabindex="-1"></a>    first_treat <span class="ot">=</span> <span class="cn">NA</span></span>
+<span id="cb1-14"><a href="#cb1-14" tabindex="-1"></a>    </span>
+<span id="cb1-15"><a href="#cb1-15" tabindex="-1"></a>    <span class="cf">for</span> (chrt <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span>imax) {</span>
+<span id="cb1-16"><a href="#cb1-16" tabindex="-1"></a>      cohort <span class="ot">=</span> <span class="fu">ifelse</span>(id<span class="sc">==</span>chrt, <span class="fu">sample.int</span>(nlvls, <span class="dv">1</span>), cohort)</span>
+<span id="cb1-17"><a href="#cb1-17" tabindex="-1"></a>    }</span>
+<span id="cb1-18"><a href="#cb1-18" tabindex="-1"></a>    </span>
+<span id="cb1-19"><a href="#cb1-19" tabindex="-1"></a>    <span class="cf">for</span> (lvls <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span>nlvls) {</span>
+<span id="cb1-20"><a href="#cb1-20" tabindex="-1"></a>      effect      <span class="ot">=</span> <span class="fu">ifelse</span>(cohort<span class="sc">==</span>lvls, <span class="fu">sample</span>(<span class="dv">2</span><span class="sc">:</span><span class="dv">10</span>, <span class="dv">1</span>), effect)</span>
+<span id="cb1-21"><a href="#cb1-21" tabindex="-1"></a>      first_treat <span class="ot">=</span> <span class="fu">ifelse</span>(cohort<span class="sc">==</span>lvls, <span class="fu">sample</span>(<span class="dv">1</span><span class="sc">:</span>(tmax<span class="sc">+</span><span class="dv">6</span>), <span class="dv">1</span>), first_treat)</span>
+<span id="cb1-22"><a href="#cb1-22" tabindex="-1"></a>    }</span>
+<span id="cb1-23"><a href="#cb1-23" tabindex="-1"></a>    </span>
+<span id="cb1-24"><a href="#cb1-24" tabindex="-1"></a>    first_treat <span class="ot">=</span> <span class="fu">ifelse</span>(first_treat<span class="sc">&gt;</span>tmax, <span class="cn">Inf</span>, first_treat)</span>
+<span id="cb1-25"><a href="#cb1-25" tabindex="-1"></a>    treat       <span class="ot">=</span> time <span class="sc">&gt;=</span> first_treat</span>
+<span id="cb1-26"><a href="#cb1-26" tabindex="-1"></a>    rel_time    <span class="ot">=</span> time <span class="sc">-</span> first_treat</span>
+<span id="cb1-27"><a href="#cb1-27" tabindex="-1"></a>    y           <span class="ot">=</span> id <span class="sc">+</span> time <span class="sc">+</span> <span class="fu">ifelse</span>(treat, effect<span class="sc">*</span>rel_time, <span class="dv">0</span>) <span class="sc">+</span> <span class="fu">rnorm</span>(imax<span class="sc">*</span>tmax)</span>
+<span id="cb1-28"><a href="#cb1-28" tabindex="-1"></a>    </span>
+<span id="cb1-29"><a href="#cb1-29" tabindex="-1"></a>    <span class="fu">rm</span>(chrt, lvls, cohort, effect)</span>
+<span id="cb1-30"><a href="#cb1-30" tabindex="-1"></a>  })</span>
+<span id="cb1-31"><a href="#cb1-31" tabindex="-1"></a></span>
+<span id="cb1-32"><a href="#cb1-32" tabindex="-1"></a><span class="fu">head</span>(dat)</span></code></pre></div>
+<pre><code>##   time id        y rel_time treat first_treat
+## 1    1  1 1.103750     -Inf FALSE         Inf
+## 2    2  1 3.158289     -Inf FALSE         Inf
+## 3    3  1 3.498052     -Inf FALSE         Inf
+## 4    4  1 4.034077     -Inf FALSE         Inf
+## 5    5  1 5.886266     -Inf FALSE         Inf
+## 6    6  1 8.085950     -Inf FALSE         Inf</code></pre>
+<p>The simulated data (<code>dat</code>) now has columns for time, id, a
 treatment indicator (<code>treat</code>), and a response variable
 (<code>y</code>). Next, we convert this data into the panel data format
 required by <code>fetwfe()</code>.</p>
@@ -544,32 +542,31 @@ required by <code>fetwfe()</code>.</p>
 <span id="cb3-4"><a href="#cb3-4" tabindex="-1"></a>time_var <span class="ot">&lt;-</span> <span class="st">&quot;time&quot;</span>       <span class="co"># Column for the time period</span></span>
 <span id="cb3-5"><a href="#cb3-5" tabindex="-1"></a>unit_var <span class="ot">&lt;-</span> <span class="st">&quot;unit&quot;</span>       <span class="co"># Column for the unit identifier</span></span>
 <span id="cb3-6"><a href="#cb3-6" tabindex="-1"></a>treatment <span class="ot">&lt;-</span> <span class="st">&quot;treated&quot;</span>   <span class="co"># Column for the treatment dummy indicator</span></span>
-<span id="cb3-7"><a href="#cb3-7" tabindex="-1"></a>covs <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="st">&quot;cov1&quot;</span>, <span class="st">&quot;cov2&quot;</span>, <span class="st">&quot;cov3&quot;</span>)  <span class="co"># Columns for covariates</span></span>
-<span id="cb3-8"><a href="#cb3-8" tabindex="-1"></a>response <span class="ot">&lt;-</span> <span class="st">&quot;response&quot;</span>   <span class="co"># Column for the response variable</span></span>
-<span id="cb3-9"><a href="#cb3-9" tabindex="-1"></a></span>
-<span id="cb3-10"><a href="#cb3-10" tabindex="-1"></a><span class="co"># Convert the dataset</span></span>
-<span id="cb3-11"><a href="#cb3-11" tabindex="-1"></a>pdata <span class="ot">&lt;-</span> dat <span class="sc">|&gt;</span></span>
-<span id="cb3-12"><a href="#cb3-12" tabindex="-1"></a>  <span class="fu">mutate</span>(</span>
-<span id="cb3-13"><a href="#cb3-13" tabindex="-1"></a>    <span class="co"># Rename id to unit and convert to character</span></span>
-<span id="cb3-14"><a href="#cb3-14" tabindex="-1"></a>    {{ unit_var }} <span class="sc">:=</span> <span class="fu">as.character</span>(id),</span>
-<span id="cb3-15"><a href="#cb3-15" tabindex="-1"></a>    <span class="co"># Ensure treatment dummy is 0/1</span></span>
-<span id="cb3-16"><a href="#cb3-16" tabindex="-1"></a>    {{ treatment }} <span class="sc">:=</span> <span class="fu">as.integer</span>(treat),</span>
-<span id="cb3-17"><a href="#cb3-17" tabindex="-1"></a>    <span class="co"># Rename y to response</span></span>
-<span id="cb3-18"><a href="#cb3-18" tabindex="-1"></a>    {{ response }} <span class="sc">:=</span> y</span>
-<span id="cb3-19"><a href="#cb3-19" tabindex="-1"></a>  ) <span class="sc">|&gt;</span></span>
-<span id="cb3-20"><a href="#cb3-20" tabindex="-1"></a>  <span class="fu">select</span>(</span>
-<span id="cb3-21"><a href="#cb3-21" tabindex="-1"></a>    {{ time_var }}, {{ unit_var }}, {{ treatment }}, <span class="fu">all_of</span>(covs), {{ response }}</span>
-<span id="cb3-22"><a href="#cb3-22" tabindex="-1"></a>  ) </span>
-<span id="cb3-23"><a href="#cb3-23" tabindex="-1"></a></span>
-<span id="cb3-24"><a href="#cb3-24" tabindex="-1"></a><span class="co"># Preview the resulting pdata dataframe</span></span>
-<span id="cb3-25"><a href="#cb3-25" tabindex="-1"></a><span class="fu">head</span>(pdata)</span></code></pre></div>
-<pre><code>##   time unit treated      cov1 cov2      cov3 response
-## 1    1    1       0 0.7977843    2 0.1582893 3.995163
-## 2    2    1       0 0.7977843    2 0.1582893 7.215283
-## 3    3    1       0 0.7977843    2 0.1582893 6.089467
-## 4    4    1       0 0.7977843    2 0.1582893 8.205118
-## 5    5    1       0 0.7977843    2 0.1582893 8.869905
-## 6    6    1       0 0.7977843    2 0.1582893 9.463189</code></pre>
+<span id="cb3-7"><a href="#cb3-7" tabindex="-1"></a>response <span class="ot">&lt;-</span> <span class="st">&quot;response&quot;</span>   <span class="co"># Column for the response variable</span></span>
+<span id="cb3-8"><a href="#cb3-8" tabindex="-1"></a></span>
+<span id="cb3-9"><a href="#cb3-9" tabindex="-1"></a><span class="co"># Convert the dataset</span></span>
+<span id="cb3-10"><a href="#cb3-10" tabindex="-1"></a>pdata <span class="ot">&lt;-</span> dat <span class="sc">|&gt;</span></span>
+<span id="cb3-11"><a href="#cb3-11" tabindex="-1"></a>  <span class="fu">mutate</span>(</span>
+<span id="cb3-12"><a href="#cb3-12" tabindex="-1"></a>    <span class="co"># Rename id to unit and convert to character</span></span>
+<span id="cb3-13"><a href="#cb3-13" tabindex="-1"></a>    {{ unit_var }} <span class="sc">:=</span> <span class="fu">as.character</span>(id),</span>
+<span id="cb3-14"><a href="#cb3-14" tabindex="-1"></a>    <span class="co"># Ensure treatment dummy is 0/1</span></span>
+<span id="cb3-15"><a href="#cb3-15" tabindex="-1"></a>    {{ treatment }} <span class="sc">:=</span> <span class="fu">as.integer</span>(treat),</span>
+<span id="cb3-16"><a href="#cb3-16" tabindex="-1"></a>    <span class="co"># Rename y to response</span></span>
+<span id="cb3-17"><a href="#cb3-17" tabindex="-1"></a>    {{ response }} <span class="sc">:=</span> y</span>
+<span id="cb3-18"><a href="#cb3-18" tabindex="-1"></a>  ) <span class="sc">|&gt;</span></span>
+<span id="cb3-19"><a href="#cb3-19" tabindex="-1"></a>  <span class="fu">select</span>(</span>
+<span id="cb3-20"><a href="#cb3-20" tabindex="-1"></a>    {{ time_var }}, {{ unit_var }}, {{ treatment }}, {{ response }}</span>
+<span id="cb3-21"><a href="#cb3-21" tabindex="-1"></a>  ) </span>
+<span id="cb3-22"><a href="#cb3-22" tabindex="-1"></a></span>
+<span id="cb3-23"><a href="#cb3-23" tabindex="-1"></a><span class="co"># Preview the resulting pdata dataframe</span></span>
+<span id="cb3-24"><a href="#cb3-24" tabindex="-1"></a><span class="fu">head</span>(pdata)</span></code></pre></div>
+<pre><code>##   time unit treated response
+## 1    1    1       0 1.103750
+## 2    2    1       0 3.158289
+## 3    3    1       0 3.498052
+## 4    4    1       0 4.034077
+## 5    5    1       0 5.886266
+## 6    6    1       0 8.085950</code></pre>
 <p>Now that <code>pdata</code> is properly formatted, we run the FETWFE
 estimator on the simulated data.</p>
 <div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a><span class="fu">library</span>(fetwfe)</span>
@@ -580,18 +577,19 @@ estimator on the simulated data.</p>
 <span id="cb5-6"><a href="#cb5-6" tabindex="-1"></a>  <span class="at">time_var =</span> <span class="st">&quot;time&quot;</span>,          <span class="co"># The time variable</span></span>
 <span id="cb5-7"><a href="#cb5-7" tabindex="-1"></a>  <span class="at">unit_var =</span> <span class="st">&quot;unit&quot;</span>,          <span class="co"># The unit identifier</span></span>
 <span id="cb5-8"><a href="#cb5-8" tabindex="-1"></a>  <span class="at">treatment =</span> <span class="st">&quot;treated&quot;</span>,      <span class="co"># The treatment dummy indicator</span></span>
-<span id="cb5-9"><a href="#cb5-9" tabindex="-1"></a>  <span class="at">covs =</span> <span class="fu">c</span>(<span class="st">&quot;cov1&quot;</span>, <span class="st">&quot;cov2&quot;</span>, <span class="st">&quot;cov3&quot;</span>),  <span class="co"># Covariates</span></span>
-<span id="cb5-10"><a href="#cb5-10" tabindex="-1"></a>  <span class="at">response =</span> <span class="st">&quot;response&quot;</span>      <span class="co"># The response variable</span></span>
-<span id="cb5-11"><a href="#cb5-11" tabindex="-1"></a>)</span>
-<span id="cb5-12"><a href="#cb5-12" tabindex="-1"></a></span>
-<span id="cb5-13"><a href="#cb5-13" tabindex="-1"></a><span class="co"># Display the overall average treatment effect estimate</span></span>
-<span id="cb5-14"><a href="#cb5-14" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">&quot;Estimated Overall ATT:&quot;</span>, result<span class="sc">$</span>att_hat, <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)</span></code></pre></div>
-<pre><code>## Estimated Overall ATT: 32.82035</code></pre>
+<span id="cb5-9"><a href="#cb5-9" tabindex="-1"></a>  <span class="at">response =</span> <span class="st">&quot;response&quot;</span>      <span class="co"># The response variable</span></span>
+<span id="cb5-10"><a href="#cb5-10" tabindex="-1"></a>)</span>
+<span id="cb5-11"><a href="#cb5-11" tabindex="-1"></a></span>
+<span id="cb5-12"><a href="#cb5-12" tabindex="-1"></a><span class="co"># Display the overall average treatment effect estimate</span></span>
+<span id="cb5-13"><a href="#cb5-13" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">&quot;Estimated Overall ATT:&quot;</span>, result<span class="sc">$</span>att_hat, <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)</span></code></pre></div>
+<pre><code>## Estimated Overall ATT: 29.82211</code></pre>
 <p>When you run this code, the function internally performs all the
 necessary data preparation, applies the fusion penalty via a bridge
 regression (using the <code>grpreg</code> package), and returns a list
 with overall and cohort-specific treatment effect estimates, standard
 errors (if available), and additional diagnostics.</p>
+<p>See the other vignette for an example of how you can use functions in
+the FETWFE package to simulate panel data.</p>
 </div>
 <div id="a-real-data-example" class="section level2">
 <h2>A “Real Data” Example</h2>
@@ -605,11 +603,11 @@ from <a href="https://arxiv.org/abs/2312.05985">my paper</a>.</p>
 observations over 33 years. After removing states that received
 treatment in the first period, we are left with 42 states, of which 5
 are never treated and 12 cohorts adopt treatment at various times.</p>
-<p>Time-varying covariates (such as the state homicide rate, logged
-personal income, and welfare participation) are included as controls
-(using the pre-treatment values). In this example, I use FETWFE to
-estimate the marginal average treatment effect of no-fault divorce laws.
-Note: the below code takes about 15 seconds to run on my laptop.</p>
+<p>Unlike the above example, this example also includes covariates (such
+as the state homicide rate, logged personal income, and welfare
+participation) as controls. Because the covariates are time-varying, the
+code selects the pre-treatment values. In this example, FETWFE estimates
+the marginal average treatment effect of no-fault divorce laws.</p>
 <div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" tabindex="-1"></a><span class="fu">library</span>(bacondecomp)  <span class="co"># for the example data</span></span>
 <span id="cb7-2"><a href="#cb7-2" tabindex="-1"></a></span>
 <span id="cb7-3"><a href="#cb7-3" tabindex="-1"></a><span class="co"># Load the example data</span></span>
@@ -637,20 +635,22 @@ Note: the below code takes about 15 seconds to run on my laptop.</p>
 <span id="cb7-25"><a href="#cb7-25" tabindex="-1"></a>    <span class="at">response=</span><span class="st">&quot;suiciderate_elast_jag&quot;</span></span>
 <span id="cb7-26"><a href="#cb7-26" tabindex="-1"></a>    )</span></code></pre></div>
 <pre><code>## Warning in idCohorts(df = data, time_var = time_var, unit_var = unit_var, : 9
-## units were removed because they were treated in the first time period</code></pre>
+## units were removed because they were treated in the first time period: AK, LA,
+## MD, NC, OK, UT, VA, VT, WV</code></pre>
 <pre><code>## Warning in processCovs(df = data, units = units, unit_var = unit_var, times =
-## times, : 1 covariates were removed because they contained missing values.</code></pre>
+## times, : 1 covariate(s) were removed because they contained missing values in
+## the first time period for at least one unit: murderrate</code></pre>
 <div class="sourceCode" id="cb10"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" tabindex="-1"></a><span class="co"># Average treatment effect on the treated units (in percentage point</span></span>
 <span id="cb10-2"><a href="#cb10-2" tabindex="-1"></a><span class="co"># units)</span></span>
 <span id="cb10-3"><a href="#cb10-3" tabindex="-1"></a><span class="dv">100</span> <span class="sc">*</span> res<span class="sc">$</span>att_hat</span></code></pre></div>
-<pre><code>## [1] -3.76012</code></pre>
+<pre><code>## [1] -3.760141</code></pre>
 <div class="sourceCode" id="cb12"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" tabindex="-1"></a><span class="co"># Conservative 95% confidence interval for ATT (in percentage point units)</span></span>
 <span id="cb12-2"><a href="#cb12-2" tabindex="-1"></a></span>
 <span id="cb12-3"><a href="#cb12-3" tabindex="-1"></a>low_att <span class="ot">&lt;-</span> <span class="dv">100</span> <span class="sc">*</span> (res<span class="sc">$</span>att_hat <span class="sc">-</span> <span class="fu">qnorm</span>(<span class="dv">1</span> <span class="sc">-</span> <span class="fl">0.05</span> <span class="sc">/</span> <span class="dv">2</span>) <span class="sc">*</span> res<span class="sc">$</span>att_se)</span>
 <span id="cb12-4"><a href="#cb12-4" tabindex="-1"></a>high_att <span class="ot">&lt;-</span> <span class="dv">100</span> <span class="sc">*</span> (res<span class="sc">$</span>att_hat <span class="sc">+</span> <span class="fu">qnorm</span>(<span class="dv">1</span> <span class="sc">-</span> <span class="fl">0.05</span> <span class="sc">/</span> <span class="dv">2</span>) <span class="sc">*</span> res<span class="sc">$</span>att_se)</span>
 <span id="cb12-5"><a href="#cb12-5" tabindex="-1"></a></span>
 <span id="cb12-6"><a href="#cb12-6" tabindex="-1"></a><span class="fu">c</span>(low_att, high_att)</span></code></pre></div>
-<pre><code>## [1] -12.73424   5.21400</code></pre>
+<pre><code>## [1] -12.73432   5.21404</code></pre>
 <div class="sourceCode" id="cb14"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" tabindex="-1"></a><span class="co"># Cohort average treatment effects and confidence intervals (in percentage</span></span>
 <span id="cb14-2"><a href="#cb14-2" tabindex="-1"></a><span class="co"># point units)</span></span>
 <span id="cb14-3"><a href="#cb14-3" tabindex="-1"></a></span>
@@ -663,14 +663,14 @@ Note: the below code takes about 15 seconds to run on my laptop.</p>
 <span id="cb14-10"><a href="#cb14-10" tabindex="-1"></a>catt_df_pct</span></code></pre></div>
 <pre><code>##    Cohort Estimated TE       SE ConfIntLow ConfIntHigh
 ## 1    1969     0.000000 0.000000   0.000000   0.0000000
-## 2    1970   -40.142218 7.813430 -55.456259 -24.8281776
+## 2    1970   -40.142589 7.813430 -55.456630 -24.8285486
 ## 3    1971     0.000000 0.000000   0.000000   0.0000000
 ## 4    1972     0.000000 0.000000   0.000000   0.0000000
-## 5    1973    -3.465602 2.169996  -7.718716   0.7875132
+## 5    1973    -3.465604 2.169996  -7.718719   0.7875105
 ## 6    1974     0.000000 0.000000   0.000000   0.0000000
 ## 7    1975     0.000000 0.000000   0.000000   0.0000000
-## 8    1976    -4.702911 3.807125 -12.164740   2.7589171
-## 9    1977    -5.338497 3.503595 -12.205417   1.5284229
+## 8    1976    -4.702909 3.807125 -12.164738   2.7589192
+## 9    1977    -5.338493 3.503595 -12.205413   1.5284275
 ## 10   1980     0.000000 0.000000   0.000000   0.0000000
 ## 11   1984     0.000000 0.000000   0.000000   0.0000000
 ## 12   1985     0.000000 0.000000   0.000000   0.0000000</code></pre>
@@ -695,7 +695,7 @@ package!</strong></p>
 <div id="references" class="section level1">
 <h1>References</h1>
 <ul>
-<li>Faletto, G. (2024). Fused Extended Two-Way Fixed Effects for
+<li>Faletto, G. (2025). Fused Extended Two-Way Fixed Effects for
 Difference-in-Differences with Staggered Adoptions. <a href="https://arxiv.org/abs/2312.05985">arXiv preprint
 arXiv:2312.05985</a>.</li>
 <li>Goodman-Bacon, A. (2021). Difference-in-Differences with variation

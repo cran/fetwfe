@@ -1,0 +1,179 @@
+---
+title: "Simulation Vignette for FETWFE: From Coefficients to True Treatment Effects"
+author: "Gregory Faletto"
+date: "`r Sys.Date()`"
+output:
+  rmarkdown::html_vignette:
+    toc: true
+    output_file: "FETWFE_Simulation_Vignette.html"
+vignette: >
+  %\VignetteIndexEntry{FETWFE Simulation Vignette}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+```{r setup}
+# Load necessary libraries
+library(dplyr)
+library(fetwfe)
+```
+
+# Introduction
+
+This vignette demonstrates how to conduct simulation studies with the `{fetwfe}` package. In particular, we will:
+
+- **Generate a vector of coefficients** with `genCoefs()`. These coefficients produce unit‐and‐time specific responses that respect difference‐in‐differences assumptions (e.g., conditional parallel trends) and the sparsity assumptions behind FETWFE.
+- **Simulate a panel data set** with `simulateData()`.
+- **Estimate treatment effects** via the FETWFE estimator with `fetwfeWithSimulatedData()`.
+- **Extract the true treatment effects** using `getTes()`.
+
+The workflow here follows the simulation‐study design outlined in [the paper](https://arxiv.org/abs/2312.05985), so you may wish to skim its setup section for additional context.
+
+# Simulation Workflow Using Piping
+
+Below is a complete simulation pipeline, step by step.
+
+## Step 1: Generate Simulation Coefficients
+
+The `genCoefs()` function returns an object of class `"FETWFE_coefs"`, containing both the coefficient vector and its simulation parameters. In this example we set:
+
+- **R** (number of treated cohorts) = 3  
+- **T** (number of time periods) = 6  
+- **d** (number of covariates) = 2  
+- **density** (sparsity level) = 0.1  
+- **eff_size** (effect‐size multiplier) = 2  
+
+
+```{r}
+# Generate the coefficient object for simulation
+sim_coefs <- genCoefs(
+  R         = 3, 
+  T         = 6, 
+  d         = 2, 
+  density   = 0.1, 
+  eff_size  = 2, 
+  seed      = 101
+)
+```
+
+(Again, for more details on the meaning of these parameters, see the simulation study section of [the paper](https://arxiv.org/abs/2312.05985).)
+
+
+
+## Step 2: Simulate Panel Data
+
+Next, we simulate a panel data set using the generated coefficient object with the `simulateData()` function. With `simulateData()`, we generate:
+
+* `N` units, each assigned to one of the cohorts
+* Time‐invariant covariates drawn from a specified distribution
+* Outcomes at times 1 through T, using our simulated coefficients
+
+Here we choose:
+
+- **N** (number of units) as 30,
+- **sig_eps_sq** (observation-level noise variance) as 5,
+- **sig_eps_c_sq** (unit-level noise variance) as 5, and
+- use the default `"gaussian"` distribution for the covariates.
+
+```{r}
+# Simulate panel data based on the coefficients
+sim_data <- simulateData(
+  sim_coefs,
+  N = 30,
+  sig_eps_sq = 5,
+  sig_eps_c_sq = 5,
+  distribution = "gaussian"
+  )
+```
+
+The dataframe is stored in `sim_data$pdata`, so we can take a quick look at the results:
+
+```{r}
+head(sim_data$pdata)
+```
+
+## Step 3: Run the FETWFE Estimator on Simulated Data
+
+We then run the estimator on the simulated data using `fetwfeWithSimulatedData()`. (We could get the same results by manually unpacking `sim_data` and passing the arguments appropriately to `fewtfe()`. `fetwfeWithSimulatedData()` is just a wrapper function that takes care of this for us.)
+
+```{r}
+result <- fetwfeWithSimulatedData(sim_data)
+```
+
+We can now extract the results from `result` in the same way that we can with the standard `fetwfe()` function.
+
+```{r}
+# Overall ATT estimate
+cat("Estimated Overall ATT:", result$att_hat, "\n")
+
+# 95% confidence interval
+ci_lower <- result$att_hat - qnorm(0.975) * result$att_se
+ci_upper <- result$att_hat + qnorm(0.975) * result$att_se
+cat("95% CI for ATT: [", ci_lower, ", ", ci_upper, "]\n")
+
+# Cohort‐specific ATTs
+print(result$catt_df)
+
+```
+
+## Step 4: Extract True Treatment Effects
+
+To evaluate the estimated ATT, we can compute the true treatment effects using the original coefficient object. The `getTes()` function extracts both the overall average treatment effect and the cohort-specific effects.
+
+```{r}
+# Extract the true treatment effects
+true_tes <- getTes(sim_coefs)
+
+# Print the true overall treatment effect
+cat("True Overall ATT:", true_tes$att_true, "\n")
+
+# Print the cohort-specific treatment effects
+print(true_tes$actual_cohort_tes)
+```
+
+We can use this to calculate metrics to evaluate our estimated treatment effect, like squared error:
+
+```{r}
+squared_error <- (result$att_hat - true_tes$att_true)^2
+
+cat("Squared error of ATT estimate:", squared_error, "\n")
+```
+
+## Combining the Workflow in One Pipeline
+
+You can also chain the simulation functions together with the pipe operator. The following code generates the coefficients, simulates the data, and runs the estimator all in one pipeline:
+
+```{r}
+coefs <- genCoefs(R = 3, T = 6, d = 2, density = 0.1, eff_size = 2, seed = 2025)
+
+result_piped <- coefs |>
+  simulateData(N = 30, sig_eps_sq = 5, sig_eps_c_sq = 5) |>
+  fetwfeWithSimulatedData()
+
+cat("Estimated Overall ATT from piped workflow:", result_piped$att_hat, "\n")
+
+true_tes_piped <- coefs |> getTes()
+
+# Print the true overall treatment effect
+cat("True Overall ATT:", true_tes_piped$att_true, "\n")
+
+# Print the squared estimation error
+squared_error_piped = (result_piped$att_hat - true_tes_piped$att_true)^2
+
+cat("Squared estimation error:", squared_error_piped, "\n")
+```
+
+# Conclusion
+
+In this vignette, we walked through how to use the simulation functions in the `{fetwfe}` package to simulate data and run simulations similar to the ones in the simulation studies section of [the FETWFE paper](https://arxiv.org/abs/2312.05985).
+
+This pipeline streamlines simulation experiments so you can rapidly evaluate FETWFE’s performance under varying scenarios. For more details, consult the package documentation or reach out to the author.

@@ -6,19 +6,13 @@ library(dplyr)
 # Set seed for reproducibility
 set.seed(123456L)
 
-# 60 time periods, 30 individuals, and 5 waves of treatment
-tmax = 60; imax = 30; nlvls = 5
+# 20 time periods, 30 individuals, and 5 waves of treatment
+tmax = 20; imax = 30; nlvls = 5
 
 dat = 
   expand.grid(time = 1:tmax, id = 1:imax) |>
   within({
     
-    # Generate time-invariant covariates
-    cov1 = rep(runif(imax, 0, 1), each = tmax)  # Random uniform values (0, 1) per individual
-    cov2 = rep(sample(1:5, imax, replace = TRUE), each = tmax)  # Random categorical values (1-5) per individual
-    cov3 = rep(rnorm(imax, mean = 0, sd = 1), each = tmax)  # Random Gaussian values (mean=0, sd=1) per individual
-    
-    # Initialize columns
     cohort      = NA
     effect      = NA
     first_treat = NA
@@ -29,13 +23,13 @@ dat =
     
     for (lvls in 1:nlvls) {
       effect      = ifelse(cohort==lvls, sample(2:10, 1), effect)
-      first_treat = ifelse(cohort==lvls, sample(1:(tmax+20), 1), first_treat)
+      first_treat = ifelse(cohort==lvls, sample(1:(tmax+6), 1), first_treat)
     }
     
     first_treat = ifelse(first_treat>tmax, Inf, first_treat)
     treat       = time >= first_treat
     rel_time    = time - first_treat
-    y           = id + time + ifelse(treat, effect*rel_time, 0) + cov1 + cov2 + cov3 + rnorm(imax*tmax)
+    y           = id + time + ifelse(treat, effect*rel_time, 0) + rnorm(imax*tmax)
     
     rm(chrt, lvls, cohort, effect)
   })
@@ -49,7 +43,6 @@ library(dplyr)
 time_var <- "time"       # Column for the time period
 unit_var <- "unit"       # Column for the unit identifier
 treatment <- "treated"   # Column for the treatment dummy indicator
-covs <- c("cov1", "cov2", "cov3")  # Columns for covariates
 response <- "response"   # Column for the response variable
 
 # Convert the dataset
@@ -63,7 +56,7 @@ pdata <- dat |>
     {{ response }} := y
   ) |>
   select(
-    {{ time_var }}, {{ unit_var }}, {{ treatment }}, all_of(covs), {{ response }}
+    {{ time_var }}, {{ unit_var }}, {{ treatment }}, {{ response }}
   ) 
 
 # Preview the resulting pdata dataframe
@@ -79,7 +72,6 @@ result <- fetwfe(
   time_var = "time",          # The time variable
   unit_var = "unit",          # The unit identifier
   treatment = "treated",      # The treatment dummy indicator
-  covs = c("cov1", "cov2", "cov3"),  # Covariates
   response = "response"      # The response variable
 )
 

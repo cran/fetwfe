@@ -12,12 +12,16 @@ The `{fetwfe}` package implements *fused extended two-way fixed effects* (FETWFE
 To install the `{fetwfe}` package, simply use
 
 ```R
-# install.packages("remotes")  # if needed
-remotes::install_github("gregfaletto/fetwfePackage")
-library(fetwfe)
+install.packages("fetwfe")
 ```
 
-The `{fetwfe}` package contains one function, `fetwfe()`, which implements fused extended two-way fixed effects. Here's some example code that implements the data application from the paper:
+You can also install the latest development version by using
+```R
+# install.packages("remotes")  # if needed
+remotes::install_github("gregfaletto/fetwfePackage")
+```
+
+The primary function in the `{fetwfe}` is `fetwfe()`, which implements fused extended two-way fixed effects. Here's some example code that implements the data application from the paper:
 
 ```R
 library(fetwfe)
@@ -60,6 +64,8 @@ catt_df_pct[["ConfIntHigh"]] <- 100 * catt_df_pct[["ConfIntHigh"]]
 catt_df_pct
 ```
 
+For a vignette and full documentation, check out the [page for the `{fetwfe}` package on CRAN](https://CRAN.R-project.org/package=fetwfe).
+
 # Documentation
 
 Some documentation for the `fetwfe()` function follows.
@@ -93,7 +99,7 @@ fetwfe(
 - `time_var`: A character string specifying the name of the column in the data frame that contains the variable for the time period. The values in this column are expected to be integers, such as years. Recommended formats for representing dates include `YYYY`, `YYYYMM`, or `YYYYMMDD`, depending on what is appropriate for your dataset.
 - `unit_var`: A character string specifying the name of the column in the data frame that contains a variable identifying each unit. The values in this column are expected to be characters, representing the "name" of each unit.
 - `treatment`: A character string specifying the name of the column in the data frame that contains the treatment indicator variable. The values in this column are expected to be integers. Specifically, the value should be `0` if the unit was untreated at the given time period and `1` if the unit was treated. The treatment is expected to be an absorbing state, meaning that once a unit is treated, it remains treated in all subsequent time periods. Units that are treated in the first time period will be automatically removed from the analysis. Ensure that there are untreated units in the final time period to allow proper estimation.
-- `covs`: A character vector specifying the names of the columns in the data frame that contain covariates. All of these columns must contain numeric or integer values. If categorical variables are included, they should be encoded, for example, as binary indicators, before being used in this function. At least one covariate must be provided.
+- `covs`: A character vector specifying the names of the columns in the data frame that contain covariates. All of these columns must contain numeric or integer values. If categorical variables are included, they should be encoded, for example, as binary indicators, before being used in this function. If no covariates are provided, the treatment effects will still be estimated, but they will only be valid under the assumptions of unconditional parallel trends and no anticipation.
 - `response`: A character string specifying the name of the column in the data frame that contains the response variable for each unit at each time. This variable must be numeric or integer.
 - `indep_counts`: An optional argument. If a large number of units are available, the dataset can be split into two subsets, with one half containing the data provided to this function in `pdata`, and the other half summarized in `indep_counts`. This should be an integer vector representing the number of units in the untreated cohort and each of the treated cohorts. This split allows for exact standard error estimation. The length of `indep_counts` must match the number of cohorts in the data. All values in `indep_counts` must be strictly positive, and their sum must match the total number of units in `pdata`. The default is `NA`, which calculates conservative standard errors.
 - `sig_eps_sq`: An optional numeric argument specifying the variance of the row-level independent and identically distributed (IID) noise assumed for each observation. If the variance is known, it is recommended to provide this value. If unknown, it will be estimated using ridge regression as described in Section 26.5.1 of Pesaran (2015). The default is `NA`.
