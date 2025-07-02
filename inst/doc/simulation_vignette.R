@@ -15,7 +15,7 @@ library(fetwfe)
 # Generate the coefficient object for simulation
 sim_coefs <- genCoefs(
   R         = 3, 
-  T         = 6, 
+  T         = 4, 
   d         = 2, 
   density   = 0.1, 
   eff_size  = 2, 
@@ -26,9 +26,9 @@ sim_coefs <- genCoefs(
 # Simulate panel data based on the coefficients
 sim_data <- simulateData(
   sim_coefs,
-  N = 30,
-  sig_eps_sq = 5,
-  sig_eps_c_sq = 5,
+  N = 60,
+  sig_eps_sq = 1,
+  sig_eps_c_sq = 1,
   distribution = "gaussian"
   )
 
@@ -39,16 +39,7 @@ head(sim_data$pdata)
 result <- fetwfeWithSimulatedData(sim_data)
 
 ## -----------------------------------------------------------------------------
-# Overall ATT estimate
-cat("Estimated Overall ATT:", result$att_hat, "\n")
-
-# 95% confidence interval
-ci_lower <- result$att_hat - qnorm(0.975) * result$att_se
-ci_upper <- result$att_hat + qnorm(0.975) * result$att_se
-cat("95% CI for ATT: [", ci_lower, ", ", ci_upper, "]\n")
-
-# Cohort‐specific ATTs
-print(result$catt_df)
+summary(result)
 
 
 ## -----------------------------------------------------------------------------
@@ -67,10 +58,10 @@ squared_error <- (result$att_hat - true_tes$att_true)^2
 cat("Squared error of ATT estimate:", squared_error, "\n")
 
 ## -----------------------------------------------------------------------------
-coefs <- genCoefs(R = 3, T = 6, d = 2, density = 0.1, eff_size = 2, seed = 2025)
+coefs <- genCoefs(R = 3, T = 4, d = 2, density = 0.1, eff_size = 2, seed = 2025)
 
 result_piped <- coefs |>
-  simulateData(N = 30, sig_eps_sq = 5, sig_eps_c_sq = 5) |>
+  simulateData(N = 60, sig_eps_sq = 1, sig_eps_c_sq = 1) |>
   fetwfeWithSimulatedData()
 
 cat("Estimated Overall ATT from piped workflow:", result_piped$att_hat, "\n")

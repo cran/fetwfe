@@ -75,8 +75,8 @@ result <- fetwfe(
   response = "response"      # The response variable
 )
 
-# Display the overall average treatment effect estimate
-cat("Estimated Overall ATT:", result$att_hat, "\n")
+# Display the average treatment effect estimates
+summary(result)
 
 ## -----------------------------------------------------------------------------
 library(bacondecomp)  # for the example data
@@ -105,6 +105,8 @@ res <- fetwfe(
     covs=c("murderrate", "lnpersinc", "afdcrolls"),
     response="suiciderate_elast_jag"
     )
+
+summary(res)
 
 # Average treatment effect on the treated units (in percentage point
 # units)

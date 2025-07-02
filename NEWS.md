@@ -1,5 +1,45 @@
 # NEWS
 
+## Version 1.5.0 (2025-07-01)
+
+- Updates to documentation, various minor tweaks to prepare for CRAN submission.
+
+## Version 1.4.1 (2025-06-06)
+
+- Add argument `guarantee_rank_condition` to `simulateData()` to provide option to ensure that final design matrix has full column rank.
+
+## Version 1.4.0 (2025-06-06)
+
+- Add S3 class for `fetwfe()`.
+
+## Version 1.3.2 (2025-06-01)
+
+- Correct some math details, update documentation.
+
+## Version 1.3.1 (2025-06-01)
+
+- Fix some bugs, update documentation.
+
+## Version 1.3.0 (2025-05-25)
+
+- Add functions:
+  * `twfeCovs()` (implementation of two-way fixed effects with covariates)
+  * `twfeCovsWithSimulatedData()` (analogous to `fetwfeWithSimulatedData()`)
+
+## Version 1.2.0 (2025-05-24)
+
+- Add functions:
+  * `btwfe()` (implementation of bridge-penalized extended two-way fixed effects)
+  * `btwfeWithSimulatedData()` (analogous to `fetwfeWithSimulatedData()`)
+
+## Version 1.1.0 (2025-05-23)
+
+- Add functions:
+  * `etwfe()` (implementation of extended two-way fixed effects)
+  * `etwfeWithSimulatedData()` (analogous to `fetwfeWithSimulatedData()`)
+  * `attgtToFetwfeDf()` (converts data.frame formatted for `did::att_gt()` to format required for `fetwfe()` and `fewtfe::etwfe()`
+  * `ewtfeToFetwfeDf()` (converts data.frame formatted for `etwfe::etwfe()` to format required for `fetwfe()` and `fetwfe::etwfe()`
+
 ## Version 1.0.0 (2025-05-14)
 
 - Update vignettes.

@@ -12,7 +12,7 @@
 
 <meta name="author" content="Gregory Faletto" />
 
-<meta name="date" content="2025-05-14" />
+<meta name="date" content="2025-07-01" />
 
 <title>fetwfe: A Package for Fused Extended Two-Way Fixed Effects</title>
 
@@ -342,7 +342,7 @@ code > span.er { color: #a61717; background-color: #e3d2d2; }
 <h1 class="title toc-ignore">fetwfe: A Package for Fused Extended
 Two-Way Fixed Effects</h1>
 <h4 class="author">Gregory Faletto</h4>
-<h4 class="date">2025-05-14</h4>
+<h4 class="date">2025-07-01</h4>
 
 
 <div id="TOC">
@@ -580,9 +580,27 @@ estimator on the simulated data.</p>
 <span id="cb5-9"><a href="#cb5-9" tabindex="-1"></a>  <span class="at">response =</span> <span class="st">&quot;response&quot;</span>      <span class="co"># The response variable</span></span>
 <span id="cb5-10"><a href="#cb5-10" tabindex="-1"></a>)</span>
 <span id="cb5-11"><a href="#cb5-11" tabindex="-1"></a></span>
-<span id="cb5-12"><a href="#cb5-12" tabindex="-1"></a><span class="co"># Display the overall average treatment effect estimate</span></span>
-<span id="cb5-13"><a href="#cb5-13" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">&quot;Estimated Overall ATT:&quot;</span>, result<span class="sc">$</span>att_hat, <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)</span></code></pre></div>
-<pre><code>## Estimated Overall ATT: 29.82211</code></pre>
+<span id="cb5-12"><a href="#cb5-12" tabindex="-1"></a><span class="co"># Display the average treatment effect estimates</span></span>
+<span id="cb5-13"><a href="#cb5-13" tabindex="-1"></a><span class="fu">summary</span>(result)</span></code></pre></div>
+<pre><code>## Summary of Fused Extended Two-Way Fixed Effects
+## ================================================
+## 
+## Overall ATT: 29.4540  (SE = 5.6503, 95% CI = [18.3796, 40.5283])
+## 
+## CATT (preview):
+##  Cohort Estimated TE        SE ConfIntLow ConfIntHigh
+##      11     13.93837 0.5030772   12.95236    14.92438
+##      12     19.65173 0.4186920   18.83111    20.47235
+##       7     56.13475 0.3710859   55.40744    56.86207
+## 
+## Model Details:
+##   Units (N)           : 30
+##   Time periods (T)    : 20
+##   Treated cohorts (R) : 3
+##   Covariates (d)      : 0
+##   Features (p)        : 55
+##   Selected size       : 17
+##   Lambda*             : 0.8412</code></pre>
 <p>When you run this code, the function internally performs all the
 necessary data preparation, applies the fusion penalty via a bridge
 regression (using the <code>grpreg</code> package), and returns a list
@@ -640,42 +658,71 @@ the marginal average treatment effect of no-fault divorce laws.</p>
 <pre><code>## Warning in processCovs(df = data, units = units, unit_var = unit_var, times =
 ## times, : 1 covariate(s) were removed because they contained missing values in
 ## the first time period for at least one unit: murderrate</code></pre>
-<div class="sourceCode" id="cb10"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" tabindex="-1"></a><span class="co"># Average treatment effect on the treated units (in percentage point</span></span>
-<span id="cb10-2"><a href="#cb10-2" tabindex="-1"></a><span class="co"># units)</span></span>
-<span id="cb10-3"><a href="#cb10-3" tabindex="-1"></a><span class="dv">100</span> <span class="sc">*</span> res<span class="sc">$</span>att_hat</span></code></pre></div>
-<pre><code>## [1] -3.760141</code></pre>
-<div class="sourceCode" id="cb12"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" tabindex="-1"></a><span class="co"># Conservative 95% confidence interval for ATT (in percentage point units)</span></span>
-<span id="cb12-2"><a href="#cb12-2" tabindex="-1"></a></span>
-<span id="cb12-3"><a href="#cb12-3" tabindex="-1"></a>low_att <span class="ot">&lt;-</span> <span class="dv">100</span> <span class="sc">*</span> (res<span class="sc">$</span>att_hat <span class="sc">-</span> <span class="fu">qnorm</span>(<span class="dv">1</span> <span class="sc">-</span> <span class="fl">0.05</span> <span class="sc">/</span> <span class="dv">2</span>) <span class="sc">*</span> res<span class="sc">$</span>att_se)</span>
-<span id="cb12-4"><a href="#cb12-4" tabindex="-1"></a>high_att <span class="ot">&lt;-</span> <span class="dv">100</span> <span class="sc">*</span> (res<span class="sc">$</span>att_hat <span class="sc">+</span> <span class="fu">qnorm</span>(<span class="dv">1</span> <span class="sc">-</span> <span class="fl">0.05</span> <span class="sc">/</span> <span class="dv">2</span>) <span class="sc">*</span> res<span class="sc">$</span>att_se)</span>
-<span id="cb12-5"><a href="#cb12-5" tabindex="-1"></a></span>
-<span id="cb12-6"><a href="#cb12-6" tabindex="-1"></a><span class="fu">c</span>(low_att, high_att)</span></code></pre></div>
-<pre><code>## [1] -12.73432   5.21404</code></pre>
-<div class="sourceCode" id="cb14"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" tabindex="-1"></a><span class="co"># Cohort average treatment effects and confidence intervals (in percentage</span></span>
-<span id="cb14-2"><a href="#cb14-2" tabindex="-1"></a><span class="co"># point units)</span></span>
-<span id="cb14-3"><a href="#cb14-3" tabindex="-1"></a></span>
-<span id="cb14-4"><a href="#cb14-4" tabindex="-1"></a>catt_df_pct <span class="ot">&lt;-</span> res<span class="sc">$</span>catt_df</span>
-<span id="cb14-5"><a href="#cb14-5" tabindex="-1"></a>catt_df_pct[[<span class="st">&quot;Estimated TE&quot;</span>]] <span class="ot">&lt;-</span> <span class="dv">100</span> <span class="sc">*</span> catt_df_pct[[<span class="st">&quot;Estimated TE&quot;</span>]]</span>
-<span id="cb14-6"><a href="#cb14-6" tabindex="-1"></a>catt_df_pct[[<span class="st">&quot;SE&quot;</span>]] <span class="ot">&lt;-</span> <span class="dv">100</span> <span class="sc">*</span> catt_df_pct[[<span class="st">&quot;SE&quot;</span>]]</span>
-<span id="cb14-7"><a href="#cb14-7" tabindex="-1"></a>catt_df_pct[[<span class="st">&quot;ConfIntLow&quot;</span>]] <span class="ot">&lt;-</span> <span class="dv">100</span> <span class="sc">*</span> catt_df_pct[[<span class="st">&quot;ConfIntLow&quot;</span>]]</span>
-<span id="cb14-8"><a href="#cb14-8" tabindex="-1"></a>catt_df_pct[[<span class="st">&quot;ConfIntHigh&quot;</span>]] <span class="ot">&lt;-</span> <span class="dv">100</span> <span class="sc">*</span> catt_df_pct[[<span class="st">&quot;ConfIntHigh&quot;</span>]]</span>
-<span id="cb14-9"><a href="#cb14-9" tabindex="-1"></a></span>
-<span id="cb14-10"><a href="#cb14-10" tabindex="-1"></a>catt_df_pct</span></code></pre></div>
-<pre><code>##    Cohort Estimated TE       SE ConfIntLow ConfIntHigh
-## 1    1969     0.000000 0.000000   0.000000   0.0000000
-## 2    1970   -40.142589 7.813430 -55.456630 -24.8285486
-## 3    1971     0.000000 0.000000   0.000000   0.0000000
-## 4    1972     0.000000 0.000000   0.000000   0.0000000
-## 5    1973    -3.465604 2.169996  -7.718719   0.7875105
-## 6    1974     0.000000 0.000000   0.000000   0.0000000
-## 7    1975     0.000000 0.000000   0.000000   0.0000000
-## 8    1976    -4.702909 3.807125 -12.164738   2.7589192
-## 9    1977    -5.338493 3.503595 -12.205413   1.5284275
-## 10   1980     0.000000 0.000000   0.000000   0.0000000
-## 11   1984     0.000000 0.000000   0.000000   0.0000000
-## 12   1985     0.000000 0.000000   0.000000   0.0000000</code></pre>
+<div class="sourceCode" id="cb10"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" tabindex="-1"></a><span class="fu">summary</span>(res)</span></code></pre></div>
+<pre><code>## Summary of Fused Extended Two-Way Fixed Effects
+## ================================================
+## 
+## Overall ATT: -0.0184  (SE = 0.0195, 95% CI = [-0.0566, 0.0198])
+## 
+## CATT (preview):
+##  Cohort Estimated TE        SE ConfIntLow ConfIntHigh
+##    1969    0.0000000 0.0000000  0.0000000   0.0000000
+##    1970   -0.3407096 0.0780162 -0.4936185  -0.1878007
+##    1971    0.0000000 0.0000000  0.0000000   0.0000000
+##    1972    0.0000000 0.0000000  0.0000000   0.0000000
+##    1973    0.0000000 0.0000000  0.0000000   0.0000000
+##    1974    0.0000000 0.0000000  0.0000000   0.0000000
+##    1975    0.0000000 0.0000000  0.0000000   0.0000000
+##    1976    0.0000000 0.0000000  0.0000000   0.0000000
+##    1977    0.0000000 0.0000000  0.0000000   0.0000000
+##    1980    0.0000000 0.0000000  0.0000000   0.0000000
+##    1984    0.0000000 0.0000000  0.0000000   0.0000000
+##    1985    0.0000000 0.0000000  0.0000000   0.0000000
+## 
+## Model Details:
+##   Units (N)           : 42
+##   Time periods (T)    : 33
+##   Treated cohorts (R) : 12
+##   Covariates (d)      : 2
+##   Features (p)        : 908
+##   Selected size       : 17
+##   Lambda*             : 0.0019</code></pre>
+<div class="sourceCode" id="cb12"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" tabindex="-1"></a><span class="co"># Average treatment effect on the treated units (in percentage point</span></span>
+<span id="cb12-2"><a href="#cb12-2" tabindex="-1"></a><span class="co"># units)</span></span>
+<span id="cb12-3"><a href="#cb12-3" tabindex="-1"></a><span class="dv">100</span> <span class="sc">*</span> res<span class="sc">$</span>att_hat</span></code></pre></div>
+<pre><code>## [1] -1.841673</code></pre>
+<div class="sourceCode" id="cb14"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" tabindex="-1"></a><span class="co"># Conservative 95% confidence interval for ATT (in percentage point units)</span></span>
+<span id="cb14-2"><a href="#cb14-2" tabindex="-1"></a></span>
+<span id="cb14-3"><a href="#cb14-3" tabindex="-1"></a>low_att <span class="ot">&lt;-</span> <span class="dv">100</span> <span class="sc">*</span> (res<span class="sc">$</span>att_hat <span class="sc">-</span> <span class="fu">qnorm</span>(<span class="dv">1</span> <span class="sc">-</span> <span class="fl">0.05</span> <span class="sc">/</span> <span class="dv">2</span>) <span class="sc">*</span> res<span class="sc">$</span>att_se)</span>
+<span id="cb14-4"><a href="#cb14-4" tabindex="-1"></a>high_att <span class="ot">&lt;-</span> <span class="dv">100</span> <span class="sc">*</span> (res<span class="sc">$</span>att_hat <span class="sc">+</span> <span class="fu">qnorm</span>(<span class="dv">1</span> <span class="sc">-</span> <span class="fl">0.05</span> <span class="sc">/</span> <span class="dv">2</span>) <span class="sc">*</span> res<span class="sc">$</span>att_se)</span>
+<span id="cb14-5"><a href="#cb14-5" tabindex="-1"></a></span>
+<span id="cb14-6"><a href="#cb14-6" tabindex="-1"></a><span class="fu">c</span>(low_att, high_att)</span></code></pre></div>
+<pre><code>## [1] -5.661232  1.977885</code></pre>
+<div class="sourceCode" id="cb16"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb16-1"><a href="#cb16-1" tabindex="-1"></a><span class="co"># Cohort average treatment effects and confidence intervals (in percentage</span></span>
+<span id="cb16-2"><a href="#cb16-2" tabindex="-1"></a><span class="co"># point units)</span></span>
+<span id="cb16-3"><a href="#cb16-3" tabindex="-1"></a></span>
+<span id="cb16-4"><a href="#cb16-4" tabindex="-1"></a>catt_df_pct <span class="ot">&lt;-</span> res<span class="sc">$</span>catt_df</span>
+<span id="cb16-5"><a href="#cb16-5" tabindex="-1"></a>catt_df_pct[[<span class="st">&quot;Estimated TE&quot;</span>]] <span class="ot">&lt;-</span> <span class="dv">100</span> <span class="sc">*</span> catt_df_pct[[<span class="st">&quot;Estimated TE&quot;</span>]]</span>
+<span id="cb16-6"><a href="#cb16-6" tabindex="-1"></a>catt_df_pct[[<span class="st">&quot;SE&quot;</span>]] <span class="ot">&lt;-</span> <span class="dv">100</span> <span class="sc">*</span> catt_df_pct[[<span class="st">&quot;SE&quot;</span>]]</span>
+<span id="cb16-7"><a href="#cb16-7" tabindex="-1"></a>catt_df_pct[[<span class="st">&quot;ConfIntLow&quot;</span>]] <span class="ot">&lt;-</span> <span class="dv">100</span> <span class="sc">*</span> catt_df_pct[[<span class="st">&quot;ConfIntLow&quot;</span>]]</span>
+<span id="cb16-8"><a href="#cb16-8" tabindex="-1"></a>catt_df_pct[[<span class="st">&quot;ConfIntHigh&quot;</span>]] <span class="ot">&lt;-</span> <span class="dv">100</span> <span class="sc">*</span> catt_df_pct[[<span class="st">&quot;ConfIntHigh&quot;</span>]]</span>
+<span id="cb16-9"><a href="#cb16-9" tabindex="-1"></a></span>
+<span id="cb16-10"><a href="#cb16-10" tabindex="-1"></a>catt_df_pct</span></code></pre></div>
+<pre><code>##    Cohort Estimated TE      SE ConfIntLow ConfIntHigh
+## 1    1969      0.00000 0.00000    0.00000     0.00000
+## 2    1970    -34.07096 7.80162  -49.36185   -18.78007
+## 3    1971      0.00000 0.00000    0.00000     0.00000
+## 4    1972      0.00000 0.00000    0.00000     0.00000
+## 5    1973      0.00000 0.00000    0.00000     0.00000
+## 6    1974      0.00000 0.00000    0.00000     0.00000
+## 7    1975      0.00000 0.00000    0.00000     0.00000
+## 8    1976      0.00000 0.00000    0.00000     0.00000
+## 9    1977      0.00000 0.00000    0.00000     0.00000
+## 10   1980      0.00000 0.00000    0.00000     0.00000
+## 11   1984      0.00000 0.00000    0.00000     0.00000
+## 12   1985      0.00000 0.00000    0.00000     0.00000</code></pre>
 <p>For the data application, FETWFE yielded an overall ATT of
-approximately –3.76% change in the female suicide rate, similar to other
+approximately –1.84% change in the female suicide rate, similar to other
 estimates in the literature. In addition, the output table (stored in
 <code>result_emp$catt_df</code>) displays the cohort-specific estimates.
 (Note that standard errors for the individual cohort estimates are less
