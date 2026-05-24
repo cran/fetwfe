@@ -1,144 +1,9 @@
 library(testthat)
 library(fetwfe)
 
-# ------------------------------------------------------------------------------
-# Helper function: generate a synthetic balanced panel data set.
-# We now use N=30 units and T=10 periods so that the degrees‐of‐freedom condition
-# (N * (T - 1) - p > 0) holds.
-# For each unit, we randomly decide whether the unit is never treated (first_treat = Inf)
-# or, if treated, assign a first treatment time (ensuring that no unit is treated in time 1).
-# ------------------------------------------------------------------------------
-generate_panel_data <- function(N = 30, T = 10, R = 9, seed = 123) {
-	set.seed(seed)
-	stopifnot(R <= T - 1)
-	# Create a vector of unit IDs (as characters)
-	unit_ids <- sprintf("unit%02d", 1:N)
-	time_vals <- 1:T
-
-	# For each unit, decide the first treatment time:
-	# With probability 0.5 the unit is never treated (first_treat = Inf);
-	# Otherwise, sample a first treatment time uniformly between 2 and T.
-	first_treat <- sapply(unit_ids, function(u) {
-		if (runif(1) < 0.5) {
-			Inf
-		} else {
-			if (R > 1) {
-				sample(2:(R + 1), 1)
-			} else {
-				2
-			}
-		}
-	})
-
-	# Build panel data (each unit appears for every time period)
-	df <- do.call(
-		rbind,
-		lapply(seq_along(unit_ids), function(i) {
-			unit <- unit_ids[i]
-			ft <- first_treat[i]
-			data.frame(
-				time = as.integer(time_vals), # must be integer
-				unit = as.character(unit), # must be character
-				treatment = as.integer(ifelse(time_vals >= ft, 1, 0)), # must be integer 0/1
-				cov1 = rnorm(T),
-				cov2 = runif(T),
-				y = rnorm(T) # outcome (numeric)
-			)
-		})
-	)
-
-	# The idCohorts function automatically removes any unit that was treated in period 1.
-	# (This is simulated by removing any row with time == 1 and treatment == 1.)
-	df <- df[!(df$time == 1 & df$treatment == 1), ]
-
-	# Order rows by unit then time
-	df <- df[order(df$unit, df$time), ]
-	rownames(df) <- NULL
-	return(df)
-}
-
-generate_bad_panel_data <- function(N = 30, T = 10, seed = 123) {
-	set.seed(seed)
-	# Create a vector of unit IDs (as characters)
-	unit_ids <- sprintf("unit%02d", 1:N)
-	time_vals <- 1:T
-
-	# For each unit, decide the first treatment time:
-	# Always sample a first treatment time uniformly between 2 and T
-	# No never-treated units.
-	first_treat <- sapply(unit_ids, function(u) {
-		sample(2:T, 1)
-	})
-
-	# Build panel data (each unit appears for every time period)
-	df <- do.call(
-		rbind,
-		lapply(seq_along(unit_ids), function(i) {
-			unit <- unit_ids[i]
-			ft <- first_treat[i]
-			data.frame(
-				time = as.integer(time_vals), # must be integer
-				unit = as.character(unit), # must be character
-				treatment = as.integer(ifelse(time_vals >= ft, 1, 0)), # must be integer 0/1
-				cov1 = rnorm(T),
-				cov2 = runif(T),
-				y = rnorm(T) # outcome (numeric)
-			)
-		})
-	)
-
-	# Order rows by unit then time
-	df <- df[order(df$unit, df$time), ]
-	rownames(df) <- NULL
-	return(df)
-}
-
-generate_minimal_panel_data <- function(seed = 123) {
-	set.seed(seed)
-
-	N <- 3
-	T <- 3
-	# Create a vector of unit IDs (as characters)
-	unit_ids <- sprintf("unit%02d", 1:N)
-	time_vals <- 1:T
-
-	# For each unit, decide the first treatment time:
-	# one treated, one untreated unit.
-	first_treat <- sapply(unit_ids, function(u) {
-		if (u == "unit01") {
-			Inf
-		} else if (u == "unit02") {
-			2
-		} else {
-			3
-		}
-	})
-
-	# Build panel data (each unit appears for every time period)
-	df <- do.call(
-		rbind,
-		lapply(seq_along(unit_ids), function(i) {
-			unit <- unit_ids[i]
-			ft <- first_treat[i]
-			data.frame(
-				time = as.integer(time_vals), # must be integer
-				unit = as.character(unit), # must be character
-				treatment = as.integer(ifelse(time_vals >= ft, 1, 0)), # must be integer 0/1
-				# cov1 = rnorm(T),
-				y = rnorm(T) # outcome (numeric)
-			)
-		})
-	)
-
-	# The idCohorts function automatically removes any unit that was treated in period 1.
-	# (This is simulated by removing any row with time == 1 and treatment == 1.)
-	df <- df[!(df$time == 1 & df$treatment == 1), ]
-
-	# Order rows by unit then time
-	df <- df[order(df$unit, df$time), ]
-	rownames(df) <- NULL
-	return(df)
-}
+# Panel-data fixture helpers (generate_panel_data, generate_bad_panel_data,
+# generate_minimal_panel_data) are defined in tests/testthat/helper-panel-fixture.R
+# and sourced by testthat before this file runs (issue #91).
 
 # ------------------------------------------------------------------------------
 # Test 1: Check that valid input produces a list with the expected output elements.
@@ -205,7 +70,7 @@ test_that("twfeCovs errors when pdata is not a data.frame", {
 			covs = c("cov1", "cov2"),
 			response = "y"
 		),
-		"is.data.frame"
+		"pdata must be a data frame"
 	)
 })
 
@@ -225,7 +90,7 @@ test_that("twfeCovs errors when time_var is not integer", {
 			covs = c("cov1", "cov2"),
 			response = "y"
 		),
-		"is.integer"
+		"time_var column 'time' must be integer"
 	)
 })
 
@@ -245,7 +110,7 @@ test_that("twfeCovs errors when unit_var is not character", {
 			covs = c("cov1", "cov2"),
 			response = "y"
 		),
-		"is.character"
+		"unit_var column 'unit' must be character"
 	)
 })
 
@@ -265,7 +130,7 @@ test_that("twfeCovs errors when treatment is not integer", {
 			covs = c("cov1", "cov2"),
 			response = "y"
 		),
-		"is.integer"
+		"treatment column 'treatment' must be integer"
 	)
 })
 
@@ -286,7 +151,7 @@ test_that("twfeCovs errors when treatment has values other than 0/1", {
 			covs = c("cov1", "cov2"),
 			response = "y"
 		),
-		"all\\(pdata\\[, treatment\\] %in% c\\(0, 1\\)\\)"
+		"treatment column 'treatment' must contain only 0/1"
 	)
 })
 
@@ -307,7 +172,7 @@ test_that("twfeCovs errors when a covariate column is missing", {
 			covs = c("cov1", "cov2"),
 			response = "y"
 		),
-		"all\\(covs %in% colnames\\(pdata\\)\\)"
+		"covs contains name\\(s\\) not in pdata"
 	)
 })
 
@@ -327,7 +192,7 @@ test_that("twfeCovs errors when response is not numeric", {
 			covs = c("cov1", "cov2"),
 			response = "y"
 		),
-		"is.numeric"
+		"response column 'y' must be numeric or integer"
 	)
 })
 
@@ -386,7 +251,7 @@ test_that("twfeCovs errors when all units are treated in the first period", {
 # Test 11: Error when there are no never-treated units.
 # ------------------------------------------------------------------------------
 
-test_that("twfeCovs errors with a panel having no never-treated units", {
+test_that("twfeCovs errors with a panel having no never-treated units when allow_no_never_treated = FALSE", {
 	df_bad <- generate_bad_panel_data(N = 30, T = 10, seed = 123)
 
 	expect_error(
@@ -397,9 +262,10 @@ test_that("twfeCovs errors with a panel having no never-treated units", {
 			treatment = "treatment",
 			covs = c("cov1", "cov2"),
 			response = "y",
-			verbose = FALSE
+			verbose = FALSE,
+			allow_no_never_treated = FALSE
 		)),
-		"No never-treated units detected in data to fit model; estimating treatment effects is not possible"
+		"allow_no_never_treated"
 	)
 })
 
@@ -425,7 +291,7 @@ test_that("twfeCovs errors when data has fewer than 4 rows", {
 			covs = c("cov1", "cov2"),
 			response = "y"
 		),
-		"nrow\\(pdata\\) >= 4"
+		"pdata must have at least 4 rows"
 	)
 })
 
@@ -500,7 +366,7 @@ test_that("twfeCovs returns a valid numeric overall ATT", {
 # ------------------------------------------------------------------------------
 test_that("twfeCovs works on a minimal valid dataset", {
 	# Create a balanced panel with N = 3 units and T = 3 time periods.
-	df_min <- generate_minimal_panel_data()
+	df_min <- generate_minimal_panel_data(include_cov1 = FALSE)
 
 	result <- twfeCovs(
 		pdata = df_min,
@@ -523,7 +389,7 @@ test_that("twfeCovs works on a minimal valid dataset", {
 # ------------------------------------------------------------------------------
 test_that("minimal data set requires provided noise variance", {
 	# Create a balanced panel with N = 3 units and T = 3 time periods.
-	df_min <- generate_minimal_panel_data()
+	df_min <- generate_minimal_panel_data(include_cov1 = FALSE)
 
 	expect_error(
 		twfeCovs(
@@ -833,8 +699,8 @@ test_that("data application works with ridge penalty", {
 		treatment = "changed",
 		covs = c("murderrate", "lnpersinc", "afdcrolls"),
 		response = "suiciderate_elast_jag",
-		sig_eps_sq = 0.1025361,
-		sig_eps_c_sq = 4.227651e-35,
+		sig_eps_sq = 0.0344,
+		sig_eps_c_sq = 0.1507,
 		verbose = TRUE,
 		add_ridge = TRUE
 	))
@@ -967,7 +833,7 @@ test_that("twfeCovs throws error when a cohort contains fewer than d + 1 units",
 			response = "y",
 			verbose = FALSE
 		),
-		"At least one cohort contains fewer than d \\+ 1 units\\. The design matrix may be rank-deficient\\. Calculating standard errors may not be possible, and estimating treatment effects may only be possible using add_ridge = TRUE\\."
+		"At least one cohort contains fewer than d \\+ 1 units\\. The design matrix is rank-deficient\\. Calculating standard errors will not be possible, and estimating treatment effects is only possible using add_ridge = TRUE\\."
 	)
 
 	expect_warning(
@@ -981,7 +847,7 @@ test_that("twfeCovs throws error when a cohort contains fewer than d + 1 units",
 			verbose = FALSE,
 			add_ridge = TRUE
 		),
-		"At least one cohort contains fewer than d \\+ 1 units\\. The design matrix may be rank-deficient\\. Calculating standard errors may not be possible, and estimating treatment effects may only be possible using add_ridge = TRUE\\."
+		"At least one cohort contains fewer than d \\+ 1 units\\. The design matrix is rank-deficient\\. Calculating standard errors will not be possible, and estimating treatment effects is only possible using add_ridge = TRUE\\."
 	)
 
 	res <- suppressWarnings(twfeCovs(
@@ -997,4 +863,225 @@ test_that("twfeCovs throws error when a cohort contains fewer than d + 1 units",
 
 	expect_true(!is.na(res$att_hat))
 	expect_true(res$att_hat != 0)
+})
+
+# ------------------------------------------------------------------------------
+# Test: twfeCovs surfaces P_value but not selected in catt_df
+# ------------------------------------------------------------------------------
+test_that("twfeCovs surfaces P_value but not selected in catt_df", {
+	set.seed(2026)
+	sim <- genCoefs(R = 3, T = 6, d = 2, density = 0.5, eff_size = 2)
+	dat <- simulateData(
+		sim,
+		N = 120,
+		sig_eps_sq = 1,
+		sig_eps_c_sq = 0.5
+	)
+	res <- twfeCovsWithSimulatedData(dat, verbose = FALSE)
+
+	expect_true("P_value" %in% colnames(res$catt_df))
+	expect_false("selected" %in% colnames(res$catt_df))
+
+	expect_true("att_p_value" %in% names(res))
+	expect_false("att_selected" %in% names(res))
+	expect_length(res$att_p_value, 1)
+
+	non_na <- !is.na(res$catt_df$P_value)
+	expect_true(all(res$catt_df$P_value[non_na] >= 0))
+	expect_true(all(res$catt_df$P_value[non_na] <= 1))
+})
+
+# ------------------------------------------------------------------------------
+# Test: twfeCovs auto-truncates a no-never-treated panel (default)
+# ------------------------------------------------------------------------------
+test_that("twfeCovs auto-truncates a panel with no never-treated units (default)", {
+	df_bad <- generate_bad_panel_data(N = 200, T = 10, seed = 123)
+
+	expect_warning(
+		res <- twfeCovs(
+			pdata = df_bad,
+			time_var = "time",
+			unit_var = "unit",
+			treatment = "treatment",
+			covs = c("cov1", "cov2"),
+			response = "y",
+			verbose = FALSE
+		),
+		"auto-truncated"
+	)
+	expect_true(is.list(res))
+	expect_true(is.finite(res$att_hat))
+	expect_s3_class(res$catt_df, "data.frame")
+})
+
+# ------------------------------------------------------------------------------
+# Issue #116 Gap 2: se_type = "cluster" and the auto-truncation of an
+# all-treated panel (allow_no_never_treated) are each tested in isolation, but
+# never together. This exercises the interaction end-to-end: a cluster SE
+# computed on an auto-truncated panel must still be finite and strictly
+# positive. The > 0 assertion is load-bearing -- on an all-treated panel the
+# bridge estimators select every coefficient out and return att_se = 0
+# exactly, which a finiteness-only check would pass vacuously. Parallel to the
+# etwfe Gap 2 test in test-etwfe.R.
+# ------------------------------------------------------------------------------
+test_that("twfeCovs cluster SE is finite and positive on an auto-truncated panel", {
+	df_bad <- generate_bad_panel_data(N = 200, T = 10, seed = 123)
+
+	expect_warning(
+		res <- twfeCovs(
+			pdata = df_bad,
+			time_var = "time",
+			unit_var = "unit",
+			treatment = "treatment",
+			covs = c("cov1", "cov2"),
+			response = "y",
+			se_type = "cluster",
+			allow_no_never_treated = TRUE,
+			verbose = FALSE
+		),
+		"auto-truncated"
+	)
+	expect_s3_class(res, "twfeCovs")
+	expect_true(is.finite(res$att_se))
+	expect_false(is.na(res$att_se))
+	expect_gt(res$att_se, 0)
+})
+
+# ------------------------------------------------------------------------------
+# Test: twfeCovs errors cleanly when truncation would yield < 2 retained cohorts
+# ------------------------------------------------------------------------------
+test_that("twfeCovs errors cleanly when no-never-treated truncation would yield < 2 cohorts", {
+	N <- 5
+	T_periods <- 6
+	r_single <- 4
+	df_single <- data.frame(
+		time = rep(seq_len(T_periods), times = N),
+		unit = rep(paste0("u", seq_len(N)), each = T_periods),
+		treatment = rep(
+			c(rep(0L, r_single - 1L), rep(1L, T_periods - r_single + 1L)),
+			times = N
+		),
+		cov1 = rep(rnorm(N, mean = 0), each = T_periods),
+		cov2 = rep(rnorm(N, mean = 0), each = T_periods),
+		y = rnorm(N * T_periods)
+	)
+
+	expect_error(
+		suppressWarnings(twfeCovs(
+			pdata = df_single,
+			time_var = "time",
+			unit_var = "unit",
+			treatment = "treatment",
+			covs = c("cov1", "cov2"),
+			response = "y",
+			verbose = FALSE
+		)),
+		"treated cohort"
+	)
+})
+
+# ------------------------------------------------------------------------------
+# Helpers for se_type tests: small F1-conforming and AR(1)-corrupted panels.
+# simulateData() produces F1-conforming shocks only; for the serially-correlated
+# fixture we add an AR(1) shock per unit on top of the simulated response.
+# ------------------------------------------------------------------------------
+make_se_type_panel <- function(seed = 2026, N = 120) {
+	set.seed(seed)
+	sim_coefs <- genCoefs(R = 3, T = 6, d = 2, density = 0.5, eff_size = 2)
+	simulateData(sim_coefs, N = N, sig_eps_sq = 1, sig_eps_c_sq = 0.5)
+}
+
+make_ar1_panel <- function(seed = 7, N = 150, rho = 0.85, sd_e = 1) {
+	set.seed(seed)
+	sim_coefs <- genCoefs(R = 3, T = 6, d = 2, density = 0.5, eff_size = 2)
+	sim <- simulateData(
+		sim_coefs,
+		N = N,
+		sig_eps_sq = 0.5,
+		sig_eps_c_sq = 0.5
+	)
+	pdata <- sim$pdata
+	pdata <- pdata[order(pdata$unit, pdata$time), ]
+	units <- unique(pdata$unit)
+	T_ <- length(unique(pdata$time))
+	set.seed(seed + 100)
+	for (u in units) {
+		idx <- which(pdata$unit == u)
+		ar <- numeric(T_)
+		ar[1] <- rnorm(1, sd = sd_e / sqrt(1 - rho^2))
+		for (t in 2:T_) {
+			ar[t] <- rho * ar[t - 1] + rnorm(1, sd = sd_e)
+		}
+		pdata[idx, sim$response] <- pdata[idx, sim$response] + ar
+	}
+	sim$pdata <- pdata
+	sim
+}
+
+# ------------------------------------------------------------------------------
+# Test: twfeCovs with se_type omitted matches se_type = "default" identically
+# ------------------------------------------------------------------------------
+test_that("twfeCovs se_type omitted matches se_type = 'default' identically", {
+	sim <- make_se_type_panel()
+	res_omit <- twfeCovsWithSimulatedData(sim)
+	res_def <- twfeCovsWithSimulatedData(sim, se_type = "default")
+	expect_identical(res_omit$att_se, res_def$att_se)
+	expect_identical(res_omit$catt_ses, res_def$catt_ses)
+	expect_identical(res_omit$att_hat, res_def$att_hat)
+	expect_identical(res_omit$catt_hats, res_def$catt_hats)
+})
+
+# ------------------------------------------------------------------------------
+# Test: twfeCovs with se_type = "cluster" returns finite SEs on a clean panel
+# ------------------------------------------------------------------------------
+test_that("twfeCovs se_type = 'cluster' returns finite SEs on a clean panel", {
+	sim <- make_se_type_panel()
+	res <- twfeCovsWithSimulatedData(sim, se_type = "cluster")
+	expect_true(is.finite(res$att_se))
+	expect_gt(res$att_se, 0)
+	expect_true(all(is.finite(res$catt_ses)))
+	expect_true(all(res$catt_ses > 0))
+})
+
+# ------------------------------------------------------------------------------
+# Test: under deliberately serially-correlated DGP, cluster SE > default SE
+# ------------------------------------------------------------------------------
+test_that("twfeCovs cluster-robust SE exceeds default SE under AR(1) shocks", {
+	mk <- make_ar1_panel()
+	res_def <- twfeCovsWithSimulatedData(mk, se_type = "default")
+	res_cls <- twfeCovsWithSimulatedData(mk, se_type = "cluster")
+	expect_true(is.finite(res_def$att_se))
+	expect_true(is.finite(res_cls$att_se))
+	expect_gt(res_def$att_se, 0)
+	expect_gt(res_cls$att_se, res_def$att_se)
+})
+
+# ------------------------------------------------------------------------------
+# Test: $se_type slot on output reflects the argument value
+# ------------------------------------------------------------------------------
+test_that("twfeCovs $se_type slot reflects the argument value", {
+	sim <- make_se_type_panel()
+	res_def <- twfeCovsWithSimulatedData(sim)
+	res_cls <- twfeCovsWithSimulatedData(sim, se_type = "cluster")
+	expect_identical(res_def$se_type, "default")
+	expect_identical(res_cls$se_type, "cluster")
+})
+
+# ------------------------------------------------------------------------------
+# Test (#76 Item 1): twfeCovs() returns a classed object with print + coef methods.
+# Prior to this PR the return was an unclassed named list; `print()` fell
+# through to `print.default` and dumped the full design matrix.
+# ------------------------------------------------------------------------------
+test_that("twfeCovs returns a classed object with working print + coef methods (#76 Item 1)", {
+	set.seed(42)
+	sim <- simulateData(
+		genCoefs(R = 3, T = 6, d = 2, density = 0.5, eff_size = 2, seed = 42),
+		N = 60,
+		sig_eps_sq = 1,
+		sig_eps_c_sq = 0.5
+	)
+	fit <- twfeCovsWithSimulatedData(sim)
+	expect_s3_class(fit, "twfeCovs")
+	expect_no_error(capture.output(print(fit)))
+	expect_equal(coef(fit), fit$beta_hat)
 })

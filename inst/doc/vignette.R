@@ -6,31 +6,37 @@ library(dplyr)
 # Set seed for reproducibility
 set.seed(123456L)
 
-# 20 time periods, 30 individuals, and 5 waves of treatment
+# 20 time periods, 30 individuals, and 5 cohort levels
 tmax = 20; imax = 30; nlvls = 5
 
-dat = 
+dat =
   expand.grid(time = 1:tmax, id = 1:imax) |>
   within({
-    
     cohort      = NA
     effect      = NA
     first_treat = NA
-    
+    cov1        = NA
+    cov2        = NA
+    cov3        = NA
     for (chrt in 1:imax) {
       cohort = ifelse(id==chrt, sample.int(nlvls, 1), cohort)
     }
-    
     for (lvls in 1:nlvls) {
       effect      = ifelse(cohort==lvls, sample(2:10, 1), effect)
       first_treat = ifelse(cohort==lvls, sample(1:(tmax+6), 1), first_treat)
     }
-    
+    # three time-invariant covariates: one value per individual,
+    # drawn AFTER the timing loop so first_treat is unchanged
+    for (chrt in 1:imax) {
+      cov1 = ifelse(id==chrt, rnorm(1), cov1)
+      cov2 = ifelse(id==chrt, rnorm(1), cov2)
+      cov3 = ifelse(id==chrt, rnorm(1), cov3)
+    }
     first_treat = ifelse(first_treat>tmax, Inf, first_treat)
     treat       = time >= first_treat
     rel_time    = time - first_treat
-    y           = id + time + ifelse(treat, effect*rel_time, 0) + rnorm(imax*tmax)
-    
+    y           = id + time + ifelse(treat, effect*rel_time, 0) +
+                  0.5*cov1 - 0.7*cov2 + 1.2*cov3 + rnorm(imax*tmax)
     rm(chrt, lvls, cohort, effect)
   })
 
@@ -56,8 +62,9 @@ pdata <- dat |>
     {{ response }} := y
   ) |>
   select(
-    {{ time_var }}, {{ unit_var }}, {{ treatment }}, {{ response }}
-  ) 
+    {{ time_var }}, {{ unit_var }}, {{ treatment }}, {{ response }},
+    cov1, cov2, cov3
+  )
 
 # Preview the resulting pdata dataframe
 head(pdata)
@@ -68,11 +75,12 @@ library(fetwfe)
 
 # Run the FETWFE estimator on the simulated data
 result <- fetwfe(
-  pdata = pdata,              # The panel dataset
-  time_var = "time",          # The time variable
-  unit_var = "unit",          # The unit identifier
-  treatment = "treated",      # The treatment dummy indicator
-  response = "response"      # The response variable
+  pdata = pdata,                        # The panel dataset
+  time_var = "time",                    # The time variable
+  unit_var = "unit",                    # The unit identifier
+  treatment = "treated",                # The treatment dummy indicator
+  response = "response",                # The response variable
+  covs = c("cov1", "cov2", "cov3")      # The time-invariant covariates
 )
 
 # Display the average treatment effect estimates
@@ -82,28 +90,28 @@ summary(result)
 library(bacondecomp)  # for the example data
 
 # Load the example data
-data(divorce)
+data(castle)
 
-set.seed(23451)
+# Response: the log homicide rate, so the ATT reads roughly as a
+# percentage change in the homicide rate.
+castle$l_homicide <- log(castle$homicide)
 
-# Suppose we wish to estimate the effect of a policy (here represented by the variable "changed")
-# on the response "suiciderate_elast_jag" using covariates "murderrate", "lnpersinc", and "afdcrolls".
-# Here
-# - 'year' is the time period variable (as an integer),
-# - 'st' is the unit identifier,
-# - 'changed' is the treatment indicator (with 0 = untreated, 1 = treated),
-# 
-# The `fetwfe()` function will automatically take care of removing units that were treated in the
-# first time period.
+# Treatment indicator. `cdl` records the share of the year the
+# castle-doctrine law was in effect; a state is treated from the year its
+# law took effect, so we binarize with `cdl > 0`. `fetwfe()` requires the
+# treatment column to be an integer 0/1 absorbing indicator.
+castle$treated <- as.integer(castle$cdl > 0)
 
-# Call the estimator
+# Call the estimator. Here
+# - 'year' is the time period variable (an integer),
+# - 'state' is the unit identifier,
+# - 'treated' is the absorbing treatment indicator.
 res <- fetwfe(
-    pdata=divorce[divorce$sex == 2, ],
-    time_var="year",
-    unit_var="st",
-    treatment="changed",
-    covs=c("murderrate", "lnpersinc", "afdcrolls"),
-    response="suiciderate_elast_jag"
+    pdata = castle,
+    time_var = "year",
+    unit_var = "state",
+    treatment = "treated",
+    response = "l_homicide"
     )
 
 summary(res)
@@ -129,4 +137,34 @@ catt_df_pct[["ConfIntLow"]] <- 100 * catt_df_pct[["ConfIntLow"]]
 catt_df_pct[["ConfIntHigh"]] <- 100 * catt_df_pct[["ConfIntHigh"]]
 
 catt_df_pct
+
+## ----zero-effect-demo, message = FALSE----------------------------------------
+set.seed(2026)
+sim <- genCoefs(R = 3, T = 6, d = 2, density = 0.5, eff_size = 2)
+dat <- simulateData(sim, N = 120, sig_eps_sq = 1, sig_eps_c_sq = 0.5)
+res_demo <- fetwfeWithSimulatedData(dat, verbose = FALSE)
+res_demo$catt_df
+
+## ----tidy-demo, eval = requireNamespace("broom", quietly = TRUE)--------------
+library(broom)
+
+tidy_res <- tidy(result)
+tidy_res
+
+## ----glance-demo, eval = requireNamespace("broom", quietly = TRUE)------------
+glance(result)
+
+## ----augment-demo, eval = requireNamespace("broom", quietly = TRUE)-----------
+head(augment(result, data = pdata))
+
+## ----tidy-plot, eval = requireNamespace("broom", quietly = TRUE) && requireNamespace("ggplot2", quietly = TRUE) && requireNamespace("dplyr", quietly = TRUE)----
+library(ggplot2)
+tidy_res |> 
+  dplyr::filter(term != "ATT") |>
+  # Remove non-digits to extract the number, then reorder the factor levels
+  dplyr::mutate(term = reorder(term, as.numeric(gsub("\\D", "", term)))) |>
+  ggplot(aes(x = term, y = estimate)) +
+  geom_pointrange(aes(ymin = conf.low, ymax = conf.high)) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(x = NULL, y = "Cohort treatment effect", title = "Cohort ATTs")
 

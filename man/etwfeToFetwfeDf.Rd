@@ -14,7 +14,8 @@ etwfeToFetwfeDf(
   covars = character(0),
   drop_first_period_treated = TRUE,
   out_names = list(time = "time_var", unit = "unit_var", treatment = "treatment",
-    response = "response")
+    response = "response"),
+  verbose = FALSE
 )
 }
 \arguments{
@@ -37,14 +38,18 @@ sample period be removed?  (\code{fetwfe()} will drop them internally anyway, bu
 here keeps the returned dataframe clean.)  Default \code{TRUE}.}
 
 \item{out_names}{Named list giving the column names that the returned dataframe should have.
-The default (\code{time}, \code{unit}, \code{treatment}, \code{y}) matches the arguments usually supplied to
+The default (\code{time_var}, \code{unit_var}, \code{treatment}, \code{response}) matches the arguments usually supplied to
 \code{fetwfe()}. \strong{Do not change the \emph{names} of this list} – only the \emph{values} – and keep all four.}
+
+\item{verbose}{Logical. If \code{TRUE}, a \code{message()} reports the count of
+first-period-treated unit-period rows dropped when
+\code{drop_first_period_treated = TRUE}. Default \code{FALSE} (silent).}
 }
 \value{
 A tidy \code{data.frame} with (in this order)
 \itemize{
-\item \code{time}       integer,
-\item \code{unit}       character,
+\item \code{time_var}   integer,
+\item \code{unit_var}   character,
 \item \code{treatment}  integer 0/1 absorbing-state dummy,
 \item \code{response}   numeric outcome,
 \item any covariates requested in \code{covars}.
@@ -54,7 +59,7 @@ Ready to pass straight to \code{fetwfe()} or \code{fetwfe::etwfe()}.
 \description{
 \code{etwfeToFetwfeDf()} reshapes and renames a panel dataset that is already
 formatted for \code{etwfe::etwfe()} (McDermott 2024) so that it can be
-passed directly to fetwfe()\code{or}etwfe()\verb{from the}fetwfe` package. In
+passed directly to \code{fetwfe()} or \code{etwfe()} from the \code{fetwfe} package. In
 particular, it
 \itemize{
 \item creates an \emph{absorbing‑state} treatment dummy that equals 1 from the

@@ -16,7 +16,9 @@ etwfe(
   sig_eps_c_sq = NA,
   verbose = FALSE,
   alpha = 0.05,
-  add_ridge = FALSE
+  add_ridge = FALSE,
+  allow_no_never_treated = TRUE,
+  se_type = "default"
 )
 }
 \arguments{
@@ -72,16 +74,18 @@ if \code{q < 1}.)}
 noise assumed to apply to each observation. See Section 2 of Faletto (2025)
 for details. It is best to provide this variance if it is known (for example,
 if you are using simulated data). If this variance is unknown, this argument
-can be omitted, and the variance will be estimated using the estimator from
-Pesaran (2015, Section 26.5.1) with ridge regression. Default is NA.}
+can be omitted, and the variance will be estimated by
+REML on the linear mixed-effects model \code{y ~ X + (1 | unit)} via
+\code{lme4::lmer} (Bates et al. 2015; Patterson & Thompson 1971). Default is NA.}
 
 \item{sig_eps_c_sq}{(Optional.) Numeric; the variance of the unit-level IID
 noise (random effects) assumed to apply to each observation. See Section 2 of
 Faletto (2025) for details. It is best to provide this variance if it is
 known (for example, if you are using simulated data). If this variance is
 unknown, this argument can be omitted, and the variance will be estimated
-using the estimator from Pesaran (2015, Section 26.5.1) with ridge
-regression. Default is NA.}
+by REML via \code{lme4::lmer} on the
+linear mixed-effects model \code{y ~ X + (1 | unit)} (Bates et al. 2015;
+Patterson & Thompson 1971). Default is NA.}
 
 \item{verbose}{Logical; if TRUE, more details on the progress of the function will
 be printed as the function executes. Default is FALSE.}
@@ -92,12 +96,34 @@ for the cohort average treatment effects that will be returned in \code{catt_df}
 \item{add_ridge}{(Optional.) Logical; if TRUE, adds a small amount of ridge
 regularization to the (untransformed) coefficients to stabilize estimation.
 Default is FALSE.}
+
+\item{allow_no_never_treated}{(Optional.) Logical; if \code{TRUE} (default) and
+the input panel contains no never-treated units, the panel is auto-truncated
+by dropping time periods at and after the latest cohort's start time --- the
+units in that latest cohort then serve as the never-treated comparison group
+in the retained sub-panel --- with a warning naming the dropped periods. If
+\code{FALSE}, the estimator stops with an error in this case (the package's
+behavior prior to version 1.5.6). The argument has no effect when the input
+already contains never-treated units. Default is \code{TRUE}.}
+
+\item{se_type}{Character; one of \code{"default"} (the package's
+Assumption-F1-based standard error from the paper) or \code{"cluster"}
+(an \emph{experimental} unit-clustered Liang-Zeger sandwich SE on the
+OLS-selected support; see the companion vignette \code{inference_vignette}
+for the formula, the assumptions, and the theory-pending caveat).
+Default is \code{"default"}.}
 }
 \value{
-A named list with the following elements: \item{att_hat}{The
+An object of class \code{etwfe} containing the following elements:
+\item{att_hat}{The
 estimated overall average treatment effect for a randomly selected treated
 unit.} \item{att_se}{A standard error for the ATT. If the Gram matrix is not
-invertible, this will be NA.} \item{catt_hats}{A named vector containing the
+invertible, this will be NA.}
+\item{att_p_value}{A two-sided p-value for the overall ATT against the
+null \code{H_0: tau = 0}, computed as \verb{2 * pnorm(-|att_hat / att_se|)}. \code{NA} if
+\code{att_se} is zero or \code{NA}. Standard post-OLS interpretation; ETWFE does not
+perform selection.}
+\item{catt_hats}{A named vector containing the
 estimated average treatment effects for each cohort.} \item{catt_ses}{A named
 vector containing the (asymptotically exact) standard errors for
 the estimated average treatment effects within each cohort.}
@@ -106,8 +132,10 @@ cohort conditional on being treated, which was used in calculating \code{att_hat
 If \code{indep_counts} was provided, \code{cohort_probs} was calculated from that;
 otherwise, it was calculated from the counts of units in each treated
 cohort in \code{pdata}.} \item{catt_df}{A dataframe displaying the cohort names,
-average treatment effects, standard errors, and \code{1 - alpha} confidence
-interval bounds.} \item{beta_hat}{The full vector of estimated coefficients.}
+average treatment effects, standard errors, \code{1 - alpha} confidence
+interval bounds, and per-cohort p-values (\code{P_value}). No \code{selected} column;
+ETWFE does not perform selection.}
+\item{beta_hat}{The full vector of estimated coefficients.}
 \item{treat_inds}{The indices of \code{beta_hat} corresponding to
 the treatment effects for each cohort at each time.}
 \item{treat_int_inds}{The indices of \code{beta_hat} corresponding to the
@@ -131,17 +159,77 @@ of covariates that appear in the final data set (after any covariates may
 have been removed because they contained missing values or all contained the
 same value for every unit).} \item{p}{The final number of columns in the full
 set of covariates used to estimate the model.}
+\item{alpha}{The alpha level used for confidence intervals.}
+\item{calc_ses}{Logical indicating whether standard errors were calculated.}
+\item{cohort_probs_overall}{A vector of the estimated cohort probabilities
+on the overall sample (treated and untreated), used in computing the
+variance of the overall ATT.}
+\item{indep_counts_used}{Logical scalar; \code{TRUE} if a valid \code{indep_counts}
+argument was provided and used for asymptotically-exact ATT inference,
+\code{FALSE} otherwise.}
+\item{se_type}{Character scalar; the \code{se_type} argument the user passed
+(\code{"default"} or \code{"cluster"}).}
+\item{y_mean}{Numeric scalar; the mean of the original (pre-centering)
+response. Stored so downstream methods (\code{augment()}, \code{predict()})
+can return fitted values on the original-response scale.}
+\item{response_col_name}{Character scalar; the name of the response
+column in the original \code{pdata}. Consumed by \verb{augment.<class>()}.}
+\item{time_var, unit_var, treatment}{Character scalars; the
+\code{time_var} / \code{unit_var} / \code{treatment} arguments the user passed.
+Consumed by \verb{augment.<class>()} when auto-aligning a user-supplied
+panel to the fitted design.}
+\item{covs}{Character vector; the original \code{covs} argument the user
+passed (before any factor expansion the estimator performed
+internally). Consumed by \verb{augment.<class>()}.}
 }
 \description{
 Implementation of extended two-way fixed effects.
 Estimates overall ATT as well as CATT (cohort average treatment effects on
 the treated units).
 }
+\examples{
+\dontrun{
+library(bacondecomp)
+
+data(castle)
+
+# Response: the log homicide rate. Treatment: `cdl` records the share of
+# the year the castle-doctrine law was in effect, so `cdl > 0` gives the
+# absorbing 0/1 treatment indicator.
+castle$l_homicide <- log(castle$homicide)
+castle$treated <- as.integer(castle$cdl > 0)
+
+# No `covs` here: etwfe is pure OLS (no bridge penalty), and castle's
+# smallest adoption cohorts contain a single state, so the design is
+# rank-deficient once any covariate is added.
+res <- etwfe(
+    pdata = castle,
+    time_var = "year",
+    unit_var = "state",
+    treatment = "treated",
+    response = "l_homicide",
+    verbose = TRUE)
+
+# Print results
+print(res, max_cohorts = Inf)
+}
+}
 \references{
 Wooldridge, J. M. (2021). Two-way fixed effects, the two-way mundlak
 regression, and difference-in-differences estimators.
 \emph{Available at SSRN 3906345}.
 \doi{10.2139/ssrn.3906345}.
+
+Bates, D., Maechler, M., Bolker, B., & Walker, S. (2015). Fitting
+Linear Mixed-Effects Models Using lme4. \emph{Journal of Statistical
+Software}, 67(1), 1-48. \doi{10.18637/jss.v067.i01}.
+
+Patterson, H. D., & Thompson, R. (1971). Recovery of inter-block
+information when block sizes are unequal. \emph{Biometrika}, 58(3),
+545-554.
+
+Pinheiro, J. C., & Bates, D. M. (2000). \emph{Mixed-Effects Models in
+S and S-PLUS}. Springer.
 }
 \author{
 Gregory Faletto

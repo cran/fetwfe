@@ -12,7 +12,7 @@
 
 <meta name="author" content="Gregory Faletto" />
 
-<meta name="date" content="2025-07-01" />
+<meta name="date" content="2026-05-23" />
 
 <title>Simulation Vignette for FETWFE: From Coefficients to True Treatment Effects</title>
 
@@ -342,7 +342,7 @@ code > span.er { color: #a61717; background-color: #e3d2d2; }
 <h1 class="title toc-ignore">Simulation Vignette for FETWFE: From
 Coefficients to True Treatment Effects</h1>
 <h4 class="author">Gregory Faletto</h4>
-<h4 class="date">2025-07-01</h4>
+<h4 class="date">2026-05-23</h4>
 
 
 <div id="TOC">
@@ -480,22 +480,23 @@ way that we can with the standard <code>fetwfe()</code> function.</p>
 <span id="cb6-2"><a href="#cb6-2" tabindex="-1"></a><span class="co">#&gt; Summary of Fused Extended Two-Way Fixed Effects</span></span>
 <span id="cb6-3"><a href="#cb6-3" tabindex="-1"></a><span class="co">#&gt; ================================================</span></span>
 <span id="cb6-4"><a href="#cb6-4" tabindex="-1"></a><span class="co">#&gt; </span></span>
-<span id="cb6-5"><a href="#cb6-5" tabindex="-1"></a><span class="co">#&gt; Overall ATT: 0.0862  (SE = 0.1554, 95% CI = [-0.2185, 0.3908])</span></span>
-<span id="cb6-6"><a href="#cb6-6" tabindex="-1"></a><span class="co">#&gt; </span></span>
-<span id="cb6-7"><a href="#cb6-7" tabindex="-1"></a><span class="co">#&gt; CATT (preview):</span></span>
-<span id="cb6-8"><a href="#cb6-8" tabindex="-1"></a><span class="co">#&gt;  Cohort Estimated TE        SE ConfIntLow ConfIntHigh</span></span>
-<span id="cb6-9"><a href="#cb6-9" tabindex="-1"></a><span class="co">#&gt;       2    -1.513251 0.1972121 -1.8997792   -1.126722</span></span>
-<span id="cb6-10"><a href="#cb6-10" tabindex="-1"></a><span class="co">#&gt;       3     1.014200 0.1264405  0.7663809    1.262019</span></span>
-<span id="cb6-11"><a href="#cb6-11" tabindex="-1"></a><span class="co">#&gt;       4     0.000000 0.0000000  0.0000000    0.000000</span></span>
-<span id="cb6-12"><a href="#cb6-12" tabindex="-1"></a><span class="co">#&gt; </span></span>
-<span id="cb6-13"><a href="#cb6-13" tabindex="-1"></a><span class="co">#&gt; Model Details:</span></span>
-<span id="cb6-14"><a href="#cb6-14" tabindex="-1"></a><span class="co">#&gt;   Units (N)           : 60</span></span>
-<span id="cb6-15"><a href="#cb6-15" tabindex="-1"></a><span class="co">#&gt;   Time periods (T)    : 4</span></span>
-<span id="cb6-16"><a href="#cb6-16" tabindex="-1"></a><span class="co">#&gt;   Treated cohorts (R) : 3</span></span>
-<span id="cb6-17"><a href="#cb6-17" tabindex="-1"></a><span class="co">#&gt;   Covariates (d)      : 2</span></span>
-<span id="cb6-18"><a href="#cb6-18" tabindex="-1"></a><span class="co">#&gt;   Features (p)        : 38</span></span>
-<span id="cb6-19"><a href="#cb6-19" tabindex="-1"></a><span class="co">#&gt;   Selected size       : 6</span></span>
-<span id="cb6-20"><a href="#cb6-20" tabindex="-1"></a><span class="co">#&gt;   Lambda*             : 0.0301</span></span></code></pre></div>
+<span id="cb6-5"><a href="#cb6-5" tabindex="-1"></a><span class="co">#&gt; Overall ATT: 0.0862  (SE = 0.1501, p = 0.5659, 95% CI = [-0.2081, 0.3805])</span></span>
+<span id="cb6-6"><a href="#cb6-6" tabindex="-1"></a><span class="co">#&gt; Selected: TRUE</span></span>
+<span id="cb6-7"><a href="#cb6-7" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb6-8"><a href="#cb6-8" tabindex="-1"></a><span class="co">#&gt; CATT (preview):</span></span>
+<span id="cb6-9"><a href="#cb6-9" tabindex="-1"></a><span class="co">#&gt;  Cohort Estimated TE        SE ConfIntLow ConfIntHigh      P_value selected</span></span>
+<span id="cb6-10"><a href="#cb6-10" tabindex="-1"></a><span class="co">#&gt;       2    -1.513251 0.1972121 -1.8997792   -1.126722 1.677405e-14     TRUE</span></span>
+<span id="cb6-11"><a href="#cb6-11" tabindex="-1"></a><span class="co">#&gt;       3     1.014200 0.1264405  0.7663809    1.262019 1.047502e-15     TRUE</span></span>
+<span id="cb6-12"><a href="#cb6-12" tabindex="-1"></a><span class="co">#&gt;       4     0.000000 0.0000000  0.0000000    0.000000           NA    FALSE</span></span>
+<span id="cb6-13"><a href="#cb6-13" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb6-14"><a href="#cb6-14" tabindex="-1"></a><span class="co">#&gt; Model Details:</span></span>
+<span id="cb6-15"><a href="#cb6-15" tabindex="-1"></a><span class="co">#&gt;   Units (N)           : 60</span></span>
+<span id="cb6-16"><a href="#cb6-16" tabindex="-1"></a><span class="co">#&gt;   Time periods (T)    : 4</span></span>
+<span id="cb6-17"><a href="#cb6-17" tabindex="-1"></a><span class="co">#&gt;   Treated cohorts (R) : 3</span></span>
+<span id="cb6-18"><a href="#cb6-18" tabindex="-1"></a><span class="co">#&gt;   Covariates (d)      : 2</span></span>
+<span id="cb6-19"><a href="#cb6-19" tabindex="-1"></a><span class="co">#&gt;   Features (p)        : 38</span></span>
+<span id="cb6-20"><a href="#cb6-20" tabindex="-1"></a><span class="co">#&gt;   Selected size       : 6</span></span>
+<span id="cb6-21"><a href="#cb6-21" tabindex="-1"></a><span class="co">#&gt;   Lambda*             : 0.0301</span></span></code></pre></div>
 </div>
 <div id="step-4-extract-true-treatment-effects" class="section level2">
 <h2>Step 4: Extract True Treatment Effects</h2>
@@ -562,15 +563,6 @@ consult the package documentation or reach out to the author.</p>
 <!-- code folding -->
 
 
-<!-- dynamically load mathjax for compatibility with self-contained -->
-<script>
-  (function () {
-    var script = document.createElement("script");
-    script.type = "text/javascript";
-    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
-    document.getElementsByTagName("head")[0].appendChild(script);
-  })();
-</script>
 
 </body>
 </html>

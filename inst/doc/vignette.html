@@ -12,7 +12,7 @@
 
 <meta name="author" content="Gregory Faletto" />
 
-<meta name="date" content="2025-07-01" />
+<meta name="date" content="2026-05-23" />
 
 <title>fetwfe: A Package for Fused Extended Two-Way Fixed Effects</title>
 
@@ -342,7 +342,7 @@ code > span.er { color: #a61717; background-color: #e3d2d2; }
 <h1 class="title toc-ignore">fetwfe: A Package for Fused Extended
 Two-Way Fixed Effects</h1>
 <h4 class="author">Gregory Faletto</h4>
-<h4 class="date">2025-07-01</h4>
+<h4 class="date">2026-05-23</h4>
 
 
 <div id="TOC">
@@ -356,6 +356,9 @@ Two-Way Fixed Effects</h1>
 <li><a href="#simulated-data-example" id="toc-simulated-data-example">Simulated Data Example</a></li>
 <li><a href="#a-real-data-example" id="toc-a-real-data-example">A “Real
 Data” Example</a></li>
+<li><a href="#testing-the-zero-effect-null" id="toc-testing-the-zero-effect-null">Testing the zero-effect
+null</a></li>
+<li><a href="#tidy-outputs-with-broom" id="toc-tidy-outputs-with-broom">Tidy outputs with broom</a></li>
 </ul></li>
 <li><a href="#conclusion" id="toc-conclusion">Conclusion</a></li>
 <li><a href="#references" id="toc-references">References</a></li>
@@ -380,11 +383,11 @@ you’d like.</p>
 <h2>Background</h2>
 <p>This vignette is written under the assumption that you’re at least
 vaguely familiar with developments in <a href="https://en.wikipedia.org/wiki/Difference_in_differences">difference-in-differences</a>
-with <a href="https://bookdown.org/mike/data_analysis/sec-difference-in-differences.html#sec-multiple-periods-and-variation-in-treatment-timing">staggered
+with <a href="https://mike-data-analysis.share.connect.posit.cloud/sec-difference-in-differences.html#sec-multiple-periods-and-variation-in-treatment-timing">staggered
 adoptions</a> since about 2018. Just to make sure we’re on the same
 page, the brief recap is:</p>
 <ul>
-<li>Historically, under staggered adoptions researchers used the <a href="https://bookdown.org/mike/data_analysis/sec-difference-in-differences.html#sec-two-way-fixed-effects">standard
+<li>Historically, under staggered adoptions researchers used the <a href="https://mike-data-analysis.share.connect.posit.cloud/sec-difference-in-differences.html#sec-two-way-fixed-effects">standard
 two-way fixed effects estimator</a> and interpreted the coefficient on
 the treatment dummy as an average treatment effect on the treated
 units.</li>
@@ -409,15 +412,17 @@ less data per parameter and your estimates are noisier.</p>
 parameters and then finding that it is too high variance (that is, it
 <em>overfits</em>) is a familiar issue. The most common solution has
 been regularization.</p>
-<p>You could just add <span class="math inline">\(\ell_2\)</span> or
-<span class="math inline">\(\ell_1\)</span> regularization to a
-difference-in-differences regression estimator and probably see an
-improvement in your efficiency, but FETWFE does something more
-sophisticated than that. (Plus, that approach wouldn’t allow you to get
-valid standard errors for your treatment effect estimates, but FETWFE
-does.) Qualitatively, FETWFE uses machine learning to learn which of
-these added parameters were actually unnecessary to add, and then takes
-them back out in order to improve efficiency.</p>
+<p>You could just add
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>ℓ</mi><mn>2</mn></msub><annotation encoding="application/x-tex">\ell_2</annotation></semantics></math>
+or
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>ℓ</mi><mn>1</mn></msub><annotation encoding="application/x-tex">\ell_1</annotation></semantics></math>
+regularization to a difference-in-differences regression estimator and
+probably see an improvement in your efficiency, but FETWFE does
+something more sophisticated than that. (Plus, that approach wouldn’t
+allow you to get valid standard errors for your treatment effect
+estimates, but FETWFE does.) Qualitatively, FETWFE uses machine learning
+to learn which of these added parameters were actually unnecessary to
+add, and then takes them back out in order to improve efficiency.</p>
 <p>That’s all the description I’ll give you in this vignette. You can
 learn all of the details in the paper on arXiv:</p>
 <blockquote>
@@ -475,13 +480,21 @@ overall average treatment effect, cohort-specific treatment effects,
 standard errors (when available), and various diagnostic quantities.</p>
 <p>You can get the full documentation details by using
 <code>?fetwfe</code> in R when you have the package loaded.</p>
+<p>For a detailed discussion of how the package’s standard errors are
+computed, the assumptions they rely on, and an experimental
+cluster-robust option (<code>se_type = &quot;cluster&quot;</code>) suitable as a
+sensitivity check, see the companion vignette
+<code>inference_vignette</code>.</p>
 <p>In the next sections, we’ll walk through examples of how
 <code>fetwfe()</code> is used.</p>
 <div id="simulated-data-example" class="section level2">
 <h2>Simulated Data Example</h2>
 <p>I’ll start illustrating how to use <code>fetwfe()</code> by using a
-simulated data set. The example below simulates a balanced panel with 60
-time periods, 30 individuals, and 5 waves of treatment.</p>
+simulated data set. The example below simulates a balanced panel with 20
+time periods and 30 individuals. Each individual is assigned at random
+to one of five cohort levels; with the randomly drawn treatment timing,
+three of those levels resolve to cohorts that are actually treated
+within the panel window and the rest are never treated.</p>
 <p>In the simulation, each individual is assigned a random cohort (which
 determines the timing of treatment) and three time-invariant covariates
 are generated. The response variable is constructed so that, after
@@ -496,46 +509,53 @@ estimators</a>. Thanks for sharing the code publicly!</strong></p>
 <div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a><span class="co"># Set seed for reproducibility</span></span>
 <span id="cb1-2"><a href="#cb1-2" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">123456</span><span class="dt">L</span>)</span>
 <span id="cb1-3"><a href="#cb1-3" tabindex="-1"></a></span>
-<span id="cb1-4"><a href="#cb1-4" tabindex="-1"></a><span class="co"># 20 time periods, 30 individuals, and 5 waves of treatment</span></span>
+<span id="cb1-4"><a href="#cb1-4" tabindex="-1"></a><span class="co"># 20 time periods, 30 individuals, and 5 cohort levels</span></span>
 <span id="cb1-5"><a href="#cb1-5" tabindex="-1"></a>tmax <span class="ot">=</span> <span class="dv">20</span>; imax <span class="ot">=</span> <span class="dv">30</span>; nlvls <span class="ot">=</span> <span class="dv">5</span></span>
 <span id="cb1-6"><a href="#cb1-6" tabindex="-1"></a></span>
-<span id="cb1-7"><a href="#cb1-7" tabindex="-1"></a>dat <span class="ot">=</span> </span>
+<span id="cb1-7"><a href="#cb1-7" tabindex="-1"></a>dat <span class="ot">=</span></span>
 <span id="cb1-8"><a href="#cb1-8" tabindex="-1"></a>  <span class="fu">expand.grid</span>(<span class="at">time =</span> <span class="dv">1</span><span class="sc">:</span>tmax, <span class="at">id =</span> <span class="dv">1</span><span class="sc">:</span>imax) <span class="sc">|&gt;</span></span>
 <span id="cb1-9"><a href="#cb1-9" tabindex="-1"></a>  <span class="fu">within</span>({</span>
-<span id="cb1-10"><a href="#cb1-10" tabindex="-1"></a>    </span>
-<span id="cb1-11"><a href="#cb1-11" tabindex="-1"></a>    cohort      <span class="ot">=</span> <span class="cn">NA</span></span>
-<span id="cb1-12"><a href="#cb1-12" tabindex="-1"></a>    effect      <span class="ot">=</span> <span class="cn">NA</span></span>
-<span id="cb1-13"><a href="#cb1-13" tabindex="-1"></a>    first_treat <span class="ot">=</span> <span class="cn">NA</span></span>
-<span id="cb1-14"><a href="#cb1-14" tabindex="-1"></a>    </span>
-<span id="cb1-15"><a href="#cb1-15" tabindex="-1"></a>    <span class="cf">for</span> (chrt <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span>imax) {</span>
-<span id="cb1-16"><a href="#cb1-16" tabindex="-1"></a>      cohort <span class="ot">=</span> <span class="fu">ifelse</span>(id<span class="sc">==</span>chrt, <span class="fu">sample.int</span>(nlvls, <span class="dv">1</span>), cohort)</span>
-<span id="cb1-17"><a href="#cb1-17" tabindex="-1"></a>    }</span>
-<span id="cb1-18"><a href="#cb1-18" tabindex="-1"></a>    </span>
+<span id="cb1-10"><a href="#cb1-10" tabindex="-1"></a>    cohort      <span class="ot">=</span> <span class="cn">NA</span></span>
+<span id="cb1-11"><a href="#cb1-11" tabindex="-1"></a>    effect      <span class="ot">=</span> <span class="cn">NA</span></span>
+<span id="cb1-12"><a href="#cb1-12" tabindex="-1"></a>    first_treat <span class="ot">=</span> <span class="cn">NA</span></span>
+<span id="cb1-13"><a href="#cb1-13" tabindex="-1"></a>    cov1        <span class="ot">=</span> <span class="cn">NA</span></span>
+<span id="cb1-14"><a href="#cb1-14" tabindex="-1"></a>    cov2        <span class="ot">=</span> <span class="cn">NA</span></span>
+<span id="cb1-15"><a href="#cb1-15" tabindex="-1"></a>    cov3        <span class="ot">=</span> <span class="cn">NA</span></span>
+<span id="cb1-16"><a href="#cb1-16" tabindex="-1"></a>    <span class="cf">for</span> (chrt <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span>imax) {</span>
+<span id="cb1-17"><a href="#cb1-17" tabindex="-1"></a>      cohort <span class="ot">=</span> <span class="fu">ifelse</span>(id<span class="sc">==</span>chrt, <span class="fu">sample.int</span>(nlvls, <span class="dv">1</span>), cohort)</span>
+<span id="cb1-18"><a href="#cb1-18" tabindex="-1"></a>    }</span>
 <span id="cb1-19"><a href="#cb1-19" tabindex="-1"></a>    <span class="cf">for</span> (lvls <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span>nlvls) {</span>
 <span id="cb1-20"><a href="#cb1-20" tabindex="-1"></a>      effect      <span class="ot">=</span> <span class="fu">ifelse</span>(cohort<span class="sc">==</span>lvls, <span class="fu">sample</span>(<span class="dv">2</span><span class="sc">:</span><span class="dv">10</span>, <span class="dv">1</span>), effect)</span>
 <span id="cb1-21"><a href="#cb1-21" tabindex="-1"></a>      first_treat <span class="ot">=</span> <span class="fu">ifelse</span>(cohort<span class="sc">==</span>lvls, <span class="fu">sample</span>(<span class="dv">1</span><span class="sc">:</span>(tmax<span class="sc">+</span><span class="dv">6</span>), <span class="dv">1</span>), first_treat)</span>
 <span id="cb1-22"><a href="#cb1-22" tabindex="-1"></a>    }</span>
-<span id="cb1-23"><a href="#cb1-23" tabindex="-1"></a>    </span>
-<span id="cb1-24"><a href="#cb1-24" tabindex="-1"></a>    first_treat <span class="ot">=</span> <span class="fu">ifelse</span>(first_treat<span class="sc">&gt;</span>tmax, <span class="cn">Inf</span>, first_treat)</span>
-<span id="cb1-25"><a href="#cb1-25" tabindex="-1"></a>    treat       <span class="ot">=</span> time <span class="sc">&gt;=</span> first_treat</span>
-<span id="cb1-26"><a href="#cb1-26" tabindex="-1"></a>    rel_time    <span class="ot">=</span> time <span class="sc">-</span> first_treat</span>
-<span id="cb1-27"><a href="#cb1-27" tabindex="-1"></a>    y           <span class="ot">=</span> id <span class="sc">+</span> time <span class="sc">+</span> <span class="fu">ifelse</span>(treat, effect<span class="sc">*</span>rel_time, <span class="dv">0</span>) <span class="sc">+</span> <span class="fu">rnorm</span>(imax<span class="sc">*</span>tmax)</span>
-<span id="cb1-28"><a href="#cb1-28" tabindex="-1"></a>    </span>
-<span id="cb1-29"><a href="#cb1-29" tabindex="-1"></a>    <span class="fu">rm</span>(chrt, lvls, cohort, effect)</span>
-<span id="cb1-30"><a href="#cb1-30" tabindex="-1"></a>  })</span>
-<span id="cb1-31"><a href="#cb1-31" tabindex="-1"></a></span>
-<span id="cb1-32"><a href="#cb1-32" tabindex="-1"></a><span class="fu">head</span>(dat)</span></code></pre></div>
-<pre><code>##   time id        y rel_time treat first_treat
-## 1    1  1 1.103750     -Inf FALSE         Inf
-## 2    2  1 3.158289     -Inf FALSE         Inf
-## 3    3  1 3.498052     -Inf FALSE         Inf
-## 4    4  1 4.034077     -Inf FALSE         Inf
-## 5    5  1 5.886266     -Inf FALSE         Inf
-## 6    6  1 8.085950     -Inf FALSE         Inf</code></pre>
+<span id="cb1-23"><a href="#cb1-23" tabindex="-1"></a>    <span class="co"># three time-invariant covariates: one value per individual,</span></span>
+<span id="cb1-24"><a href="#cb1-24" tabindex="-1"></a>    <span class="co"># drawn AFTER the timing loop so first_treat is unchanged</span></span>
+<span id="cb1-25"><a href="#cb1-25" tabindex="-1"></a>    <span class="cf">for</span> (chrt <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span>imax) {</span>
+<span id="cb1-26"><a href="#cb1-26" tabindex="-1"></a>      cov1 <span class="ot">=</span> <span class="fu">ifelse</span>(id<span class="sc">==</span>chrt, <span class="fu">rnorm</span>(<span class="dv">1</span>), cov1)</span>
+<span id="cb1-27"><a href="#cb1-27" tabindex="-1"></a>      cov2 <span class="ot">=</span> <span class="fu">ifelse</span>(id<span class="sc">==</span>chrt, <span class="fu">rnorm</span>(<span class="dv">1</span>), cov2)</span>
+<span id="cb1-28"><a href="#cb1-28" tabindex="-1"></a>      cov3 <span class="ot">=</span> <span class="fu">ifelse</span>(id<span class="sc">==</span>chrt, <span class="fu">rnorm</span>(<span class="dv">1</span>), cov3)</span>
+<span id="cb1-29"><a href="#cb1-29" tabindex="-1"></a>    }</span>
+<span id="cb1-30"><a href="#cb1-30" tabindex="-1"></a>    first_treat <span class="ot">=</span> <span class="fu">ifelse</span>(first_treat<span class="sc">&gt;</span>tmax, <span class="cn">Inf</span>, first_treat)</span>
+<span id="cb1-31"><a href="#cb1-31" tabindex="-1"></a>    treat       <span class="ot">=</span> time <span class="sc">&gt;=</span> first_treat</span>
+<span id="cb1-32"><a href="#cb1-32" tabindex="-1"></a>    rel_time    <span class="ot">=</span> time <span class="sc">-</span> first_treat</span>
+<span id="cb1-33"><a href="#cb1-33" tabindex="-1"></a>    y           <span class="ot">=</span> id <span class="sc">+</span> time <span class="sc">+</span> <span class="fu">ifelse</span>(treat, effect<span class="sc">*</span>rel_time, <span class="dv">0</span>) <span class="sc">+</span></span>
+<span id="cb1-34"><a href="#cb1-34" tabindex="-1"></a>                  <span class="fl">0.5</span><span class="sc">*</span>cov1 <span class="sc">-</span> <span class="fl">0.7</span><span class="sc">*</span>cov2 <span class="sc">+</span> <span class="fl">1.2</span><span class="sc">*</span>cov3 <span class="sc">+</span> <span class="fu">rnorm</span>(imax<span class="sc">*</span>tmax)</span>
+<span id="cb1-35"><a href="#cb1-35" tabindex="-1"></a>    <span class="fu">rm</span>(chrt, lvls, cohort, effect)</span>
+<span id="cb1-36"><a href="#cb1-36" tabindex="-1"></a>  })</span>
+<span id="cb1-37"><a href="#cb1-37" tabindex="-1"></a></span>
+<span id="cb1-38"><a href="#cb1-38" tabindex="-1"></a><span class="fu">head</span>(dat)</span></code></pre></div>
+<pre><code>##   time id         y rel_time treat       cov3      cov2       cov1 first_treat
+## 1    1  1 1.3403587     -Inf FALSE -0.5019485 0.1582893 -0.8962503         Inf
+## 2    2  1 0.2842639     -Inf FALSE -0.5019485 0.1582893 -0.8962503         Inf
+## 3    3  1 3.7222320     -Inf FALSE -0.5019485 0.1582893 -0.8962503         Inf
+## 4    4  1 3.6309664     -Inf FALSE -0.5019485 0.1582893 -0.8962503         Inf
+## 5    5  1 6.6701082     -Inf FALSE -0.5019485 0.1582893 -0.8962503         Inf
+## 6    6  1 6.0159986     -Inf FALSE -0.5019485 0.1582893 -0.8962503         Inf</code></pre>
 <p>The simulated data (<code>dat</code>) now has columns for time, id, a
-treatment indicator (<code>treat</code>), and a response variable
-(<code>y</code>). Next, we convert this data into the panel data format
-required by <code>fetwfe()</code>.</p>
+treatment indicator (<code>treat</code>), three time-invariant
+covariates (<code>cov1</code>, <code>cov2</code>, <code>cov3</code>),
+and a response variable (<code>y</code>). Next, we convert this data
+into the panel data format required by <code>fetwfe()</code>.</p>
 <div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a><span class="fu">library</span>(dplyr)</span>
 <span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a></span>
 <span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a><span class="co"># Specify column names for the pdata format</span></span>
@@ -555,178 +575,277 @@ required by <code>fetwfe()</code>.</p>
 <span id="cb3-17"><a href="#cb3-17" tabindex="-1"></a>    {{ response }} <span class="sc">:=</span> y</span>
 <span id="cb3-18"><a href="#cb3-18" tabindex="-1"></a>  ) <span class="sc">|&gt;</span></span>
 <span id="cb3-19"><a href="#cb3-19" tabindex="-1"></a>  <span class="fu">select</span>(</span>
-<span id="cb3-20"><a href="#cb3-20" tabindex="-1"></a>    {{ time_var }}, {{ unit_var }}, {{ treatment }}, {{ response }}</span>
-<span id="cb3-21"><a href="#cb3-21" tabindex="-1"></a>  ) </span>
-<span id="cb3-22"><a href="#cb3-22" tabindex="-1"></a></span>
-<span id="cb3-23"><a href="#cb3-23" tabindex="-1"></a><span class="co"># Preview the resulting pdata dataframe</span></span>
-<span id="cb3-24"><a href="#cb3-24" tabindex="-1"></a><span class="fu">head</span>(pdata)</span></code></pre></div>
-<pre><code>##   time unit treated response
-## 1    1    1       0 1.103750
-## 2    2    1       0 3.158289
-## 3    3    1       0 3.498052
-## 4    4    1       0 4.034077
-## 5    5    1       0 5.886266
-## 6    6    1       0 8.085950</code></pre>
+<span id="cb3-20"><a href="#cb3-20" tabindex="-1"></a>    {{ time_var }}, {{ unit_var }}, {{ treatment }}, {{ response }},</span>
+<span id="cb3-21"><a href="#cb3-21" tabindex="-1"></a>    cov1, cov2, cov3</span>
+<span id="cb3-22"><a href="#cb3-22" tabindex="-1"></a>  )</span>
+<span id="cb3-23"><a href="#cb3-23" tabindex="-1"></a></span>
+<span id="cb3-24"><a href="#cb3-24" tabindex="-1"></a><span class="co"># Preview the resulting pdata dataframe</span></span>
+<span id="cb3-25"><a href="#cb3-25" tabindex="-1"></a><span class="fu">head</span>(pdata)</span></code></pre></div>
+<pre><code>##   time unit treated  response       cov1      cov2       cov3
+## 1    1    1       0 1.3403587 -0.8962503 0.1582893 -0.5019485
+## 2    2    1       0 0.2842639 -0.8962503 0.1582893 -0.5019485
+## 3    3    1       0 3.7222320 -0.8962503 0.1582893 -0.5019485
+## 4    4    1       0 3.6309664 -0.8962503 0.1582893 -0.5019485
+## 5    5    1       0 6.6701082 -0.8962503 0.1582893 -0.5019485
+## 6    6    1       0 6.0159986 -0.8962503 0.1582893 -0.5019485</code></pre>
 <p>Now that <code>pdata</code> is properly formatted, we run the FETWFE
 estimator on the simulated data.</p>
 <div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a><span class="fu">library</span>(fetwfe)</span>
 <span id="cb5-2"><a href="#cb5-2" tabindex="-1"></a></span>
 <span id="cb5-3"><a href="#cb5-3" tabindex="-1"></a><span class="co"># Run the FETWFE estimator on the simulated data</span></span>
 <span id="cb5-4"><a href="#cb5-4" tabindex="-1"></a>result <span class="ot">&lt;-</span> <span class="fu">fetwfe</span>(</span>
-<span id="cb5-5"><a href="#cb5-5" tabindex="-1"></a>  <span class="at">pdata =</span> pdata,              <span class="co"># The panel dataset</span></span>
-<span id="cb5-6"><a href="#cb5-6" tabindex="-1"></a>  <span class="at">time_var =</span> <span class="st">&quot;time&quot;</span>,          <span class="co"># The time variable</span></span>
-<span id="cb5-7"><a href="#cb5-7" tabindex="-1"></a>  <span class="at">unit_var =</span> <span class="st">&quot;unit&quot;</span>,          <span class="co"># The unit identifier</span></span>
-<span id="cb5-8"><a href="#cb5-8" tabindex="-1"></a>  <span class="at">treatment =</span> <span class="st">&quot;treated&quot;</span>,      <span class="co"># The treatment dummy indicator</span></span>
-<span id="cb5-9"><a href="#cb5-9" tabindex="-1"></a>  <span class="at">response =</span> <span class="st">&quot;response&quot;</span>      <span class="co"># The response variable</span></span>
-<span id="cb5-10"><a href="#cb5-10" tabindex="-1"></a>)</span>
-<span id="cb5-11"><a href="#cb5-11" tabindex="-1"></a></span>
-<span id="cb5-12"><a href="#cb5-12" tabindex="-1"></a><span class="co"># Display the average treatment effect estimates</span></span>
-<span id="cb5-13"><a href="#cb5-13" tabindex="-1"></a><span class="fu">summary</span>(result)</span></code></pre></div>
+<span id="cb5-5"><a href="#cb5-5" tabindex="-1"></a>  <span class="at">pdata =</span> pdata,                        <span class="co"># The panel dataset</span></span>
+<span id="cb5-6"><a href="#cb5-6" tabindex="-1"></a>  <span class="at">time_var =</span> <span class="st">&quot;time&quot;</span>,                    <span class="co"># The time variable</span></span>
+<span id="cb5-7"><a href="#cb5-7" tabindex="-1"></a>  <span class="at">unit_var =</span> <span class="st">&quot;unit&quot;</span>,                    <span class="co"># The unit identifier</span></span>
+<span id="cb5-8"><a href="#cb5-8" tabindex="-1"></a>  <span class="at">treatment =</span> <span class="st">&quot;treated&quot;</span>,                <span class="co"># The treatment dummy indicator</span></span>
+<span id="cb5-9"><a href="#cb5-9" tabindex="-1"></a>  <span class="at">response =</span> <span class="st">&quot;response&quot;</span>,                <span class="co"># The response variable</span></span>
+<span id="cb5-10"><a href="#cb5-10" tabindex="-1"></a>  <span class="at">covs =</span> <span class="fu">c</span>(<span class="st">&quot;cov1&quot;</span>, <span class="st">&quot;cov2&quot;</span>, <span class="st">&quot;cov3&quot;</span>)      <span class="co"># The time-invariant covariates</span></span>
+<span id="cb5-11"><a href="#cb5-11" tabindex="-1"></a>)</span>
+<span id="cb5-12"><a href="#cb5-12" tabindex="-1"></a></span>
+<span id="cb5-13"><a href="#cb5-13" tabindex="-1"></a><span class="co"># Display the average treatment effect estimates</span></span>
+<span id="cb5-14"><a href="#cb5-14" tabindex="-1"></a><span class="fu">summary</span>(result)</span></code></pre></div>
 <pre><code>## Summary of Fused Extended Two-Way Fixed Effects
 ## ================================================
 ## 
-## Overall ATT: 29.4540  (SE = 5.6503, 95% CI = [18.3796, 40.5283])
+## Overall ATT: 33.0412  (SE = 4.5308, p = 3.04e-13, 95% CI = [24.1611, 41.9214])
+## Selected: TRUE
 ## 
 ## CATT (preview):
-##  Cohort Estimated TE        SE ConfIntLow ConfIntHigh
-##      11     13.93837 0.5030772   12.95236    14.92438
-##      12     19.65173 0.4186920   18.83111    20.47235
-##       7     56.13475 0.3710859   55.40744    56.86207
+##  Cohort Estimated TE        SE ConfIntLow ConfIntHigh P_value selected
+##       7     63.25557 0.1570982   62.94766    63.56348       0     TRUE
+##      11     20.09225 0.1144391   19.86796    20.31655       0     TRUE
+##      12     20.09225 0.1144391   19.86796    20.31655       0     TRUE
 ## 
 ## Model Details:
 ##   Units (N)           : 30
 ##   Time periods (T)    : 20
 ##   Treated cohorts (R) : 3
-##   Covariates (d)      : 0
-##   Features (p)        : 55
-##   Selected size       : 17
-##   Lambda*             : 0.8412</code></pre>
+##   Covariates (d)      : 3
+##   Features (p)        : 223
+##   Selected size       : 5
+##   Lambda*             : 7.6442</code></pre>
 <p>When you run this code, the function internally performs all the
 necessary data preparation, applies the fusion penalty via a bridge
 regression (using the <code>grpreg</code> package), and returns a list
 with overall and cohort-specific treatment effect estimates, standard
 errors (if available), and additional diagnostics.</p>
-<p>See the other vignette for an example of how you can use functions in
-the FETWFE package to simulate panel data.</p>
 </div>
 <div id="a-real-data-example" class="section level2">
 <h2>A “Real Data” Example</h2>
-<p>Next I illustrate FETWFE in an empirical context. I’ll use data from
-Stevenson and Wolfers (2006), via the <code>divorce</code> data set from
-the <code>bacondecomp</code> package, on the impact of no-fault divorce
-laws on women’s suicide rates. (See also Goodman-Bacon (2021) for an
-alternative analysis.) The below is identical to the data application
-from <a href="https://arxiv.org/abs/2312.05985">my paper</a>.</p>
-<p>In this application, the panel data consist of state-level
-observations over 33 years. After removing states that received
-treatment in the first period, we are left with 42 states, of which 5
-are never treated and 12 cohorts adopt treatment at various times.</p>
-<p>Unlike the above example, this example also includes covariates (such
-as the state homicide rate, logged personal income, and welfare
-participation) as controls. Because the covariates are time-varying, the
-code selects the pre-treatment values. In this example, FETWFE estimates
-the marginal average treatment effect of no-fault divorce laws.</p>
+<p>Next I illustrate FETWFE in an empirical context. I’ll use the
+<code>castle</code> data set from the <code>bacondecomp</code> package,
+which comes from the study by Cheng and Hoekstra (2013) of
+castle-doctrine (“stand-your-ground”) laws and homicide. It is a
+balanced state-year panel covering all 50 states over 2000-2010, with
+the laws adopted in a staggered fashion across states from 2005 to
+2009.</p>
 <div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" tabindex="-1"></a><span class="fu">library</span>(bacondecomp)  <span class="co"># for the example data</span></span>
 <span id="cb7-2"><a href="#cb7-2" tabindex="-1"></a></span>
 <span id="cb7-3"><a href="#cb7-3" tabindex="-1"></a><span class="co"># Load the example data</span></span>
-<span id="cb7-4"><a href="#cb7-4" tabindex="-1"></a><span class="fu">data</span>(divorce)</span>
+<span id="cb7-4"><a href="#cb7-4" tabindex="-1"></a><span class="fu">data</span>(castle)</span>
 <span id="cb7-5"><a href="#cb7-5" tabindex="-1"></a></span>
-<span id="cb7-6"><a href="#cb7-6" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">23451</span>)</span>
-<span id="cb7-7"><a href="#cb7-7" tabindex="-1"></a></span>
-<span id="cb7-8"><a href="#cb7-8" tabindex="-1"></a><span class="co"># Suppose we wish to estimate the effect of a policy (here represented by the variable &quot;changed&quot;)</span></span>
-<span id="cb7-9"><a href="#cb7-9" tabindex="-1"></a><span class="co"># on the response &quot;suiciderate_elast_jag&quot; using covariates &quot;murderrate&quot;, &quot;lnpersinc&quot;, and &quot;afdcrolls&quot;.</span></span>
-<span id="cb7-10"><a href="#cb7-10" tabindex="-1"></a><span class="co"># Here</span></span>
-<span id="cb7-11"><a href="#cb7-11" tabindex="-1"></a><span class="co"># - &#39;year&#39; is the time period variable (as an integer),</span></span>
-<span id="cb7-12"><a href="#cb7-12" tabindex="-1"></a><span class="co"># - &#39;st&#39; is the unit identifier,</span></span>
-<span id="cb7-13"><a href="#cb7-13" tabindex="-1"></a><span class="co"># - &#39;changed&#39; is the treatment indicator (with 0 = untreated, 1 = treated),</span></span>
-<span id="cb7-14"><a href="#cb7-14" tabindex="-1"></a><span class="co"># </span></span>
-<span id="cb7-15"><a href="#cb7-15" tabindex="-1"></a><span class="co"># The `fetwfe()` function will automatically take care of removing units that were treated in the</span></span>
-<span id="cb7-16"><a href="#cb7-16" tabindex="-1"></a><span class="co"># first time period.</span></span>
-<span id="cb7-17"><a href="#cb7-17" tabindex="-1"></a></span>
-<span id="cb7-18"><a href="#cb7-18" tabindex="-1"></a><span class="co"># Call the estimator</span></span>
-<span id="cb7-19"><a href="#cb7-19" tabindex="-1"></a>res <span class="ot">&lt;-</span> <span class="fu">fetwfe</span>(</span>
-<span id="cb7-20"><a href="#cb7-20" tabindex="-1"></a>    <span class="at">pdata=</span>divorce[divorce<span class="sc">$</span>sex <span class="sc">==</span> <span class="dv">2</span>, ],</span>
-<span id="cb7-21"><a href="#cb7-21" tabindex="-1"></a>    <span class="at">time_var=</span><span class="st">&quot;year&quot;</span>,</span>
-<span id="cb7-22"><a href="#cb7-22" tabindex="-1"></a>    <span class="at">unit_var=</span><span class="st">&quot;st&quot;</span>,</span>
-<span id="cb7-23"><a href="#cb7-23" tabindex="-1"></a>    <span class="at">treatment=</span><span class="st">&quot;changed&quot;</span>,</span>
-<span id="cb7-24"><a href="#cb7-24" tabindex="-1"></a>    <span class="at">covs=</span><span class="fu">c</span>(<span class="st">&quot;murderrate&quot;</span>, <span class="st">&quot;lnpersinc&quot;</span>, <span class="st">&quot;afdcrolls&quot;</span>),</span>
-<span id="cb7-25"><a href="#cb7-25" tabindex="-1"></a>    <span class="at">response=</span><span class="st">&quot;suiciderate_elast_jag&quot;</span></span>
-<span id="cb7-26"><a href="#cb7-26" tabindex="-1"></a>    )</span></code></pre></div>
-<pre><code>## Warning in idCohorts(df = data, time_var = time_var, unit_var = unit_var, : 9
-## units were removed because they were treated in the first time period: AK, LA,
-## MD, NC, OK, UT, VA, VT, WV</code></pre>
-<pre><code>## Warning in processCovs(df = data, units = units, unit_var = unit_var, times =
-## times, : 1 covariate(s) were removed because they contained missing values in
-## the first time period for at least one unit: murderrate</code></pre>
-<div class="sourceCode" id="cb10"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" tabindex="-1"></a><span class="fu">summary</span>(res)</span></code></pre></div>
+<span id="cb7-6"><a href="#cb7-6" tabindex="-1"></a><span class="co"># Response: the log homicide rate, so the ATT reads roughly as a</span></span>
+<span id="cb7-7"><a href="#cb7-7" tabindex="-1"></a><span class="co"># percentage change in the homicide rate.</span></span>
+<span id="cb7-8"><a href="#cb7-8" tabindex="-1"></a>castle<span class="sc">$</span>l_homicide <span class="ot">&lt;-</span> <span class="fu">log</span>(castle<span class="sc">$</span>homicide)</span>
+<span id="cb7-9"><a href="#cb7-9" tabindex="-1"></a></span>
+<span id="cb7-10"><a href="#cb7-10" tabindex="-1"></a><span class="co"># Treatment indicator. `cdl` records the share of the year the</span></span>
+<span id="cb7-11"><a href="#cb7-11" tabindex="-1"></a><span class="co"># castle-doctrine law was in effect; a state is treated from the year its</span></span>
+<span id="cb7-12"><a href="#cb7-12" tabindex="-1"></a><span class="co"># law took effect, so we binarize with `cdl &gt; 0`. `fetwfe()` requires the</span></span>
+<span id="cb7-13"><a href="#cb7-13" tabindex="-1"></a><span class="co"># treatment column to be an integer 0/1 absorbing indicator.</span></span>
+<span id="cb7-14"><a href="#cb7-14" tabindex="-1"></a>castle<span class="sc">$</span>treated <span class="ot">&lt;-</span> <span class="fu">as.integer</span>(castle<span class="sc">$</span>cdl <span class="sc">&gt;</span> <span class="dv">0</span>)</span>
+<span id="cb7-15"><a href="#cb7-15" tabindex="-1"></a></span>
+<span id="cb7-16"><a href="#cb7-16" tabindex="-1"></a><span class="co"># Call the estimator. Here</span></span>
+<span id="cb7-17"><a href="#cb7-17" tabindex="-1"></a><span class="co"># - &#39;year&#39; is the time period variable (an integer),</span></span>
+<span id="cb7-18"><a href="#cb7-18" tabindex="-1"></a><span class="co"># - &#39;state&#39; is the unit identifier,</span></span>
+<span id="cb7-19"><a href="#cb7-19" tabindex="-1"></a><span class="co"># - &#39;treated&#39; is the absorbing treatment indicator.</span></span>
+<span id="cb7-20"><a href="#cb7-20" tabindex="-1"></a>res <span class="ot">&lt;-</span> <span class="fu">fetwfe</span>(</span>
+<span id="cb7-21"><a href="#cb7-21" tabindex="-1"></a>    <span class="at">pdata =</span> castle,</span>
+<span id="cb7-22"><a href="#cb7-22" tabindex="-1"></a>    <span class="at">time_var =</span> <span class="st">&quot;year&quot;</span>,</span>
+<span id="cb7-23"><a href="#cb7-23" tabindex="-1"></a>    <span class="at">unit_var =</span> <span class="st">&quot;state&quot;</span>,</span>
+<span id="cb7-24"><a href="#cb7-24" tabindex="-1"></a>    <span class="at">treatment =</span> <span class="st">&quot;treated&quot;</span>,</span>
+<span id="cb7-25"><a href="#cb7-25" tabindex="-1"></a>    <span class="at">response =</span> <span class="st">&quot;l_homicide&quot;</span></span>
+<span id="cb7-26"><a href="#cb7-26" tabindex="-1"></a>    )</span>
+<span id="cb7-27"><a href="#cb7-27" tabindex="-1"></a></span>
+<span id="cb7-28"><a href="#cb7-28" tabindex="-1"></a><span class="fu">summary</span>(res)</span></code></pre></div>
 <pre><code>## Summary of Fused Extended Two-Way Fixed Effects
 ## ================================================
 ## 
-## Overall ATT: -0.0184  (SE = 0.0195, 95% CI = [-0.0566, 0.0198])
+## Overall ATT: 0.0546  (SE = 0.0277, p = 0.04898, 95% CI = [0.0002, 0.1089])
+## Selected: TRUE
 ## 
 ## CATT (preview):
-##  Cohort Estimated TE        SE ConfIntLow ConfIntHigh
-##    1969    0.0000000 0.0000000  0.0000000   0.0000000
-##    1970   -0.3407096 0.0780162 -0.4936185  -0.1878007
-##    1971    0.0000000 0.0000000  0.0000000   0.0000000
-##    1972    0.0000000 0.0000000  0.0000000   0.0000000
-##    1973    0.0000000 0.0000000  0.0000000   0.0000000
-##    1974    0.0000000 0.0000000  0.0000000   0.0000000
-##    1975    0.0000000 0.0000000  0.0000000   0.0000000
-##    1976    0.0000000 0.0000000  0.0000000   0.0000000
-##    1977    0.0000000 0.0000000  0.0000000   0.0000000
-##    1980    0.0000000 0.0000000  0.0000000   0.0000000
-##    1984    0.0000000 0.0000000  0.0000000   0.0000000
-##    1985    0.0000000 0.0000000  0.0000000   0.0000000
+##  Cohort Estimated TE         SE   ConfIntLow ConfIntHigh    P_value selected
+##    2005   0.05455613 0.02771106 0.0002434402   0.1088688 0.04898193     TRUE
+##    2006   0.05455613 0.02771106 0.0002434402   0.1088688 0.04898193     TRUE
+##    2007   0.05455613 0.02771106 0.0002434402   0.1088688 0.04898193     TRUE
+##    2008   0.05455613 0.02771106 0.0002434402   0.1088688 0.04898193     TRUE
+##    2009   0.05455613 0.02771106 0.0002434402   0.1088688 0.04898193     TRUE
 ## 
 ## Model Details:
-##   Units (N)           : 42
-##   Time periods (T)    : 33
-##   Treated cohorts (R) : 12
-##   Covariates (d)      : 2
-##   Features (p)        : 908
-##   Selected size       : 17
-##   Lambda*             : 0.0019</code></pre>
-<div class="sourceCode" id="cb12"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" tabindex="-1"></a><span class="co"># Average treatment effect on the treated units (in percentage point</span></span>
-<span id="cb12-2"><a href="#cb12-2" tabindex="-1"></a><span class="co"># units)</span></span>
-<span id="cb12-3"><a href="#cb12-3" tabindex="-1"></a><span class="dv">100</span> <span class="sc">*</span> res<span class="sc">$</span>att_hat</span></code></pre></div>
-<pre><code>## [1] -1.841673</code></pre>
-<div class="sourceCode" id="cb14"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" tabindex="-1"></a><span class="co"># Conservative 95% confidence interval for ATT (in percentage point units)</span></span>
-<span id="cb14-2"><a href="#cb14-2" tabindex="-1"></a></span>
-<span id="cb14-3"><a href="#cb14-3" tabindex="-1"></a>low_att <span class="ot">&lt;-</span> <span class="dv">100</span> <span class="sc">*</span> (res<span class="sc">$</span>att_hat <span class="sc">-</span> <span class="fu">qnorm</span>(<span class="dv">1</span> <span class="sc">-</span> <span class="fl">0.05</span> <span class="sc">/</span> <span class="dv">2</span>) <span class="sc">*</span> res<span class="sc">$</span>att_se)</span>
-<span id="cb14-4"><a href="#cb14-4" tabindex="-1"></a>high_att <span class="ot">&lt;-</span> <span class="dv">100</span> <span class="sc">*</span> (res<span class="sc">$</span>att_hat <span class="sc">+</span> <span class="fu">qnorm</span>(<span class="dv">1</span> <span class="sc">-</span> <span class="fl">0.05</span> <span class="sc">/</span> <span class="dv">2</span>) <span class="sc">*</span> res<span class="sc">$</span>att_se)</span>
-<span id="cb14-5"><a href="#cb14-5" tabindex="-1"></a></span>
-<span id="cb14-6"><a href="#cb14-6" tabindex="-1"></a><span class="fu">c</span>(low_att, high_att)</span></code></pre></div>
-<pre><code>## [1] -5.661232  1.977885</code></pre>
-<div class="sourceCode" id="cb16"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb16-1"><a href="#cb16-1" tabindex="-1"></a><span class="co"># Cohort average treatment effects and confidence intervals (in percentage</span></span>
-<span id="cb16-2"><a href="#cb16-2" tabindex="-1"></a><span class="co"># point units)</span></span>
-<span id="cb16-3"><a href="#cb16-3" tabindex="-1"></a></span>
-<span id="cb16-4"><a href="#cb16-4" tabindex="-1"></a>catt_df_pct <span class="ot">&lt;-</span> res<span class="sc">$</span>catt_df</span>
-<span id="cb16-5"><a href="#cb16-5" tabindex="-1"></a>catt_df_pct[[<span class="st">&quot;Estimated TE&quot;</span>]] <span class="ot">&lt;-</span> <span class="dv">100</span> <span class="sc">*</span> catt_df_pct[[<span class="st">&quot;Estimated TE&quot;</span>]]</span>
-<span id="cb16-6"><a href="#cb16-6" tabindex="-1"></a>catt_df_pct[[<span class="st">&quot;SE&quot;</span>]] <span class="ot">&lt;-</span> <span class="dv">100</span> <span class="sc">*</span> catt_df_pct[[<span class="st">&quot;SE&quot;</span>]]</span>
-<span id="cb16-7"><a href="#cb16-7" tabindex="-1"></a>catt_df_pct[[<span class="st">&quot;ConfIntLow&quot;</span>]] <span class="ot">&lt;-</span> <span class="dv">100</span> <span class="sc">*</span> catt_df_pct[[<span class="st">&quot;ConfIntLow&quot;</span>]]</span>
-<span id="cb16-8"><a href="#cb16-8" tabindex="-1"></a>catt_df_pct[[<span class="st">&quot;ConfIntHigh&quot;</span>]] <span class="ot">&lt;-</span> <span class="dv">100</span> <span class="sc">*</span> catt_df_pct[[<span class="st">&quot;ConfIntHigh&quot;</span>]]</span>
-<span id="cb16-9"><a href="#cb16-9" tabindex="-1"></a></span>
-<span id="cb16-10"><a href="#cb16-10" tabindex="-1"></a>catt_df_pct</span></code></pre></div>
-<pre><code>##    Cohort Estimated TE      SE ConfIntLow ConfIntHigh
-## 1    1969      0.00000 0.00000    0.00000     0.00000
-## 2    1970    -34.07096 7.80162  -49.36185   -18.78007
-## 3    1971      0.00000 0.00000    0.00000     0.00000
-## 4    1972      0.00000 0.00000    0.00000     0.00000
-## 5    1973      0.00000 0.00000    0.00000     0.00000
-## 6    1974      0.00000 0.00000    0.00000     0.00000
-## 7    1975      0.00000 0.00000    0.00000     0.00000
-## 8    1976      0.00000 0.00000    0.00000     0.00000
-## 9    1977      0.00000 0.00000    0.00000     0.00000
-## 10   1980      0.00000 0.00000    0.00000     0.00000
-## 11   1984      0.00000 0.00000    0.00000     0.00000
-## 12   1985      0.00000 0.00000    0.00000     0.00000</code></pre>
-<p>For the data application, FETWFE yielded an overall ATT of
-approximately –1.84% change in the female suicide rate, similar to other
-estimates in the literature. In addition, the output table (stored in
-<code>result_emp$catt_df</code>) displays the cohort-specific estimates.
-(Note that standard errors for the individual cohort estimates are less
-reliable when the number of units per cohort is small.)</p>
+##   Units (N)           : 50
+##   Time periods (T)    : 11
+##   Treated cohorts (R) : 5
+##   Covariates (d)      : 0
+##   Features (p)        : 35
+##   Selected size       : 5
+##   Lambda*             : 0.0012</code></pre>
+<div class="sourceCode" id="cb9"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" tabindex="-1"></a><span class="co"># Average treatment effect on the treated units (in percentage point</span></span>
+<span id="cb9-2"><a href="#cb9-2" tabindex="-1"></a><span class="co"># units)</span></span>
+<span id="cb9-3"><a href="#cb9-3" tabindex="-1"></a><span class="dv">100</span> <span class="sc">*</span> res<span class="sc">$</span>att_hat</span></code></pre></div>
+<pre><code>## [1] 5.455613</code></pre>
+<div class="sourceCode" id="cb11"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" tabindex="-1"></a><span class="co"># Conservative 95% confidence interval for ATT (in percentage point units)</span></span>
+<span id="cb11-2"><a href="#cb11-2" tabindex="-1"></a></span>
+<span id="cb11-3"><a href="#cb11-3" tabindex="-1"></a>low_att <span class="ot">&lt;-</span> <span class="dv">100</span> <span class="sc">*</span> (res<span class="sc">$</span>att_hat <span class="sc">-</span> <span class="fu">qnorm</span>(<span class="dv">1</span> <span class="sc">-</span> <span class="fl">0.05</span> <span class="sc">/</span> <span class="dv">2</span>) <span class="sc">*</span> res<span class="sc">$</span>att_se)</span>
+<span id="cb11-4"><a href="#cb11-4" tabindex="-1"></a>high_att <span class="ot">&lt;-</span> <span class="dv">100</span> <span class="sc">*</span> (res<span class="sc">$</span>att_hat <span class="sc">+</span> <span class="fu">qnorm</span>(<span class="dv">1</span> <span class="sc">-</span> <span class="fl">0.05</span> <span class="sc">/</span> <span class="dv">2</span>) <span class="sc">*</span> res<span class="sc">$</span>att_se)</span>
+<span id="cb11-5"><a href="#cb11-5" tabindex="-1"></a></span>
+<span id="cb11-6"><a href="#cb11-6" tabindex="-1"></a><span class="fu">c</span>(low_att, high_att)</span></code></pre></div>
+<pre><code>## [1]  0.02434402 10.88688164</code></pre>
+<div class="sourceCode" id="cb13"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" tabindex="-1"></a><span class="co"># Cohort average treatment effects and confidence intervals (in percentage</span></span>
+<span id="cb13-2"><a href="#cb13-2" tabindex="-1"></a><span class="co"># point units)</span></span>
+<span id="cb13-3"><a href="#cb13-3" tabindex="-1"></a></span>
+<span id="cb13-4"><a href="#cb13-4" tabindex="-1"></a>catt_df_pct <span class="ot">&lt;-</span> res<span class="sc">$</span>catt_df</span>
+<span id="cb13-5"><a href="#cb13-5" tabindex="-1"></a>catt_df_pct[[<span class="st">&quot;Estimated TE&quot;</span>]] <span class="ot">&lt;-</span> <span class="dv">100</span> <span class="sc">*</span> catt_df_pct[[<span class="st">&quot;Estimated TE&quot;</span>]]</span>
+<span id="cb13-6"><a href="#cb13-6" tabindex="-1"></a>catt_df_pct[[<span class="st">&quot;SE&quot;</span>]] <span class="ot">&lt;-</span> <span class="dv">100</span> <span class="sc">*</span> catt_df_pct[[<span class="st">&quot;SE&quot;</span>]]</span>
+<span id="cb13-7"><a href="#cb13-7" tabindex="-1"></a>catt_df_pct[[<span class="st">&quot;ConfIntLow&quot;</span>]] <span class="ot">&lt;-</span> <span class="dv">100</span> <span class="sc">*</span> catt_df_pct[[<span class="st">&quot;ConfIntLow&quot;</span>]]</span>
+<span id="cb13-8"><a href="#cb13-8" tabindex="-1"></a>catt_df_pct[[<span class="st">&quot;ConfIntHigh&quot;</span>]] <span class="ot">&lt;-</span> <span class="dv">100</span> <span class="sc">*</span> catt_df_pct[[<span class="st">&quot;ConfIntHigh&quot;</span>]]</span>
+<span id="cb13-9"><a href="#cb13-9" tabindex="-1"></a></span>
+<span id="cb13-10"><a href="#cb13-10" tabindex="-1"></a>catt_df_pct</span></code></pre></div>
+<pre><code>##   Cohort Estimated TE       SE ConfIntLow ConfIntHigh    P_value selected
+## 1   2005     5.455613 2.771106 0.02434402    10.88688 0.04898193     TRUE
+## 2   2006     5.455613 2.771106 0.02434402    10.88688 0.04898193     TRUE
+## 3   2007     5.455613 2.771106 0.02434402    10.88688 0.04898193     TRUE
+## 4   2008     5.455613 2.771106 0.02434402    10.88688 0.04898193     TRUE
+## 5   2009     5.455613 2.771106 0.02434402    10.88688 0.04898193     TRUE</code></pre>
+<p>FETWFE estimates that adopting a castle-doctrine law is associated
+with roughly a +5.5% change in the homicide rate. The sign and rough
+magnitude are consistent with Cheng and Hoekstra (2013), who found that
+these laws increased homicide. FETWFE fused all five adoption cohorts
+(those adopting in 2005 through 2009) to a single common effect, so each
+row of <code>res$catt_df</code> reports the same estimate.</p>
+<p>This example is covariate-free; <code>castle</code>’s smallest
+cohorts contain a single state, so the design cannot support additional
+covariates. Covariate handling is illustrated in the simulated example
+above — the <code>covs</code> argument is optional.</p>
+</div>
+<div id="testing-the-zero-effect-null" class="section level2">
+<h2>Testing the zero-effect null</h2>
+<p>Empirical users of difference-in-differences routinely want to ask
+“is this treatment effect statistically distinguishable from zero?”. The
+confidence intervals in <code>catt_df</code> answer that implicitly — a
+CI that excludes 0 corresponds to rejecting <code>H_0: tau = 0</code> at
+level <code>alpha</code>. The package also surfaces a
+<code>P_value</code> column (two-sided
+<code>2 * pnorm(-|estimate / se|)</code>) and, for <code>fetwfe()</code>
+and <code>betwfe()</code>, a <code>selected</code> logical flag, both at
+the overall ATT level and per-cohort.</p>
+<p>For <code>fetwfe()</code>, the <code>selected</code> flag carries
+something stronger than the usual CI test. Under the restriction
+selection consistency theorem (Theorem 6.2 in the paper), when the true
+<code>tau_ATT(r, t) = 0</code>, the estimator returns <em>exactly</em> 0
+with probability tending to 1. The package’s interpretation: when
+<code>selected = FALSE</code> for a cohort, the asymptotic conclusion is
+that the truth is zero — a strictly stronger statement than what a
+standard CI provides. The package surfaces this as an <em>asymptotic
+100% confidence interval of <code>{0}</code></em> for selected-out
+cohorts. For selected-out cohorts, <code>P_value</code> is reported as
+<code>NA</code> — the inferential content lives in
+<code>selected</code>.</p>
+<div class="sourceCode" id="cb15"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">2026</span>)</span>
+<span id="cb15-2"><a href="#cb15-2" tabindex="-1"></a>sim <span class="ot">&lt;-</span> <span class="fu">genCoefs</span>(<span class="at">R =</span> <span class="dv">3</span>, <span class="at">T =</span> <span class="dv">6</span>, <span class="at">d =</span> <span class="dv">2</span>, <span class="at">density =</span> <span class="fl">0.5</span>, <span class="at">eff_size =</span> <span class="dv">2</span>)</span>
+<span id="cb15-3"><a href="#cb15-3" tabindex="-1"></a>dat <span class="ot">&lt;-</span> <span class="fu">simulateData</span>(sim, <span class="at">N =</span> <span class="dv">120</span>, <span class="at">sig_eps_sq =</span> <span class="dv">1</span>, <span class="at">sig_eps_c_sq =</span> <span class="fl">0.5</span>)</span>
+<span id="cb15-4"><a href="#cb15-4" tabindex="-1"></a>res_demo <span class="ot">&lt;-</span> <span class="fu">fetwfeWithSimulatedData</span>(dat, <span class="at">verbose =</span> <span class="cn">FALSE</span>)</span>
+<span id="cb15-5"><a href="#cb15-5" tabindex="-1"></a>res_demo<span class="sc">$</span>catt_df</span></code></pre></div>
+<pre><code>##   Cohort Estimated TE         SE ConfIntLow ConfIntHigh      P_value selected
+## 1      2    0.0000000 0.00000000  0.0000000   0.0000000           NA    FALSE
+## 2      3   -0.5370618 0.04823969 -0.6316099  -0.4425138 8.648102e-29     TRUE
+## 3      4    0.0000000 0.00000000  0.0000000   0.0000000           NA    FALSE</code></pre>
+<p><code>betwfe()</code> uses bridge regression directly on the
+coefficients (rather than on the fused restrictions used by
+<code>fetwfe()</code>). Under the bridge oracle property of Kock (2013),
+<code>selected = FALSE</code> for <code>betwfe()</code> is an analogous
+asymptotic statement that the truth is zero, under a sparsity assumption
+different from the one Theorem 6.2 establishes for
+<code>fetwfe()</code>. For <code>etwfe()</code> and
+<code>twfeCovs()</code>, neither has a selection step, so the
+<code>selected</code> column is omitted; the <code>P_value</code> column
+is a standard post-OLS t-test.</p>
+<p>It is worth keeping in mind that the asymptotic 100% CI of
+<code>{0}</code> interpretation is an <code>N -&gt; infinity</code>
+statement. In small samples, it may be wise to read
+<code>selected</code> and <code>P_value</code> together rather than
+relying on either alone. In particular, even when
+<code>selected = TRUE</code>, the standard CI may cover zero — the
+selection step says “the truth is nonzero” but the magnitude CI says
+“could be zero”.</p>
+</div>
+<div id="tidy-outputs-with-broom" class="section level2">
+<h2>Tidy outputs with broom</h2>
+<p>If you use the tidyverse, the fitted object also plays nicely with
+the <a href="https://broom.tidymodels.org/">broom</a> package.
+<code>tidy()</code> reshapes the overall ATT and per-cohort CATTs into a
+long data frame with the standard <code>term</code> /
+<code>estimate</code> / <code>std.error</code> / <code>statistic</code>
+/ <code>p.value</code> / <code>conf.low</code> / <code>conf.high</code>
+columns, plus a <code>selected</code> flag (see “Testing the zero-effect
+null” below):</p>
+<div class="sourceCode" id="cb17"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb17-1"><a href="#cb17-1" tabindex="-1"></a><span class="fu">library</span>(broom)</span>
+<span id="cb17-2"><a href="#cb17-2" tabindex="-1"></a></span>
+<span id="cb17-3"><a href="#cb17-3" tabindex="-1"></a>tidy_res <span class="ot">&lt;-</span> <span class="fu">tidy</span>(result)</span>
+<span id="cb17-4"><a href="#cb17-4" tabindex="-1"></a>tidy_res</span></code></pre></div>
+<pre><code>##        term estimate std.error  statistic      p.value conf.low conf.high
+## 1       ATT 33.04125 4.5307774   7.292623 3.039789e-13 24.16109  41.92141
+## 2  Cohort 7 63.25557 0.1570982 402.649944 0.000000e+00 62.94766  63.56348
+## 3 Cohort 11 20.09225 0.1144391 175.571535 0.000000e+00 19.86796  20.31655
+## 4 Cohort 12 20.09225 0.1144391 175.571535 0.000000e+00 19.86796  20.31655
+##   selected
+## 1     TRUE
+## 2     TRUE
+## 3     TRUE
+## 4     TRUE</code></pre>
+<p><code>glance()</code> returns a one-row model-level summary —
+panel-shape counts, the bridge-regression tuning, the variance
+components, and the inference settings:</p>
+<div class="sourceCode" id="cb19"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb19-1"><a href="#cb19-1" tabindex="-1"></a><span class="fu">glance</span>(result)</span></code></pre></div>
+<pre><code>##   nobs n_units n_periods n_cohorts n_covs n_features lambda_star
+## 1  600      30        20         3      3        223    7.644204
+##   lambda_star_model_size sig_eps_sq sig_eps_c_sq alpha se_type
+## 1                      5  0.9715148     90.72018  0.05 default
+##   indep_counts_used
+## 1             FALSE</code></pre>
+<p><code>augment()</code> appends <code>.fitted</code> and
+<code>.resid</code> columns to your panel (auto-aligned to the design
+the estimator actually fit on, so the same raw <code>pdata</code> you
+handed to <code>fetwfe()</code> works):</p>
+<div class="sourceCode" id="cb21"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb21-1"><a href="#cb21-1" tabindex="-1"></a><span class="fu">head</span>(<span class="fu">augment</span>(result, <span class="at">data =</span> pdata))</span></code></pre></div>
+<pre><code>##   time unit treated  response       cov1      cov2       cov3  .fitted
+## 1    1    1       0 1.3403587 -0.8962503 0.1582893 -0.5019485 37.87288
+## 2    2    1       0 0.2842639 -0.8962503 0.1582893 -0.5019485 27.89384
+## 3    3    1       0 3.7222320 -0.8962503 0.1582893 -0.5019485 27.89384
+## 4    4    1       0 3.6309664 -0.8962503 0.1582893 -0.5019485 27.89384
+## 5    5    1       0 6.6701082 -0.8962503 0.1582893 -0.5019485 27.89384
+## 6    6    1       0 6.0159986 -0.8962503 0.1582893 -0.5019485 27.89384
+##      .resid
+## 1 -36.53252
+## 2 -27.60957
+## 3 -24.17160
+## 4 -24.26287
+## 5 -21.22373
+## 6 -21.87784</code></pre>
+<p>From there, the tidied output goes straight into <code>ggplot2</code>
+or <code>modelsummary</code> without needing to read the package’s class
+documentation:</p>
+<div class="sourceCode" id="cb23"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb23-1"><a href="#cb23-1" tabindex="-1"></a><span class="fu">library</span>(ggplot2)</span>
+<span id="cb23-2"><a href="#cb23-2" tabindex="-1"></a>tidy_res <span class="sc">|&gt;</span> </span>
+<span id="cb23-3"><a href="#cb23-3" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">filter</span>(term <span class="sc">!=</span> <span class="st">&quot;ATT&quot;</span>) <span class="sc">|&gt;</span></span>
+<span id="cb23-4"><a href="#cb23-4" tabindex="-1"></a>  <span class="co"># Remove non-digits to extract the number, then reorder the factor levels</span></span>
+<span id="cb23-5"><a href="#cb23-5" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">mutate</span>(<span class="at">term =</span> <span class="fu">reorder</span>(term, <span class="fu">as.numeric</span>(<span class="fu">gsub</span>(<span class="st">&quot;</span><span class="sc">\\</span><span class="st">D&quot;</span>, <span class="st">&quot;&quot;</span>, term)))) <span class="sc">|&gt;</span></span>
+<span id="cb23-6"><a href="#cb23-6" tabindex="-1"></a>  <span class="fu">ggplot</span>(<span class="fu">aes</span>(<span class="at">x =</span> term, <span class="at">y =</span> estimate)) <span class="sc">+</span></span>
+<span id="cb23-7"><a href="#cb23-7" tabindex="-1"></a>  <span class="fu">geom_pointrange</span>(<span class="fu">aes</span>(<span class="at">ymin =</span> conf.low, <span class="at">ymax =</span> conf.high)) <span class="sc">+</span></span>
+<span id="cb23-8"><a href="#cb23-8" tabindex="-1"></a>  <span class="fu">geom_hline</span>(<span class="at">yintercept =</span> <span class="dv">0</span>, <span class="at">linetype =</span> <span class="st">&quot;dashed&quot;</span>) <span class="sc">+</span></span>
+<span id="cb23-9"><a href="#cb23-9" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="cn">NULL</span>, <span class="at">y =</span> <span class="st">&quot;Cohort treatment effect&quot;</span>, <span class="at">title =</span> <span class="st">&quot;Cohort ATTs&quot;</span>)</span></code></pre></div>
+<p><img role="img" src="data:image/png;base64,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" /><!-- --></p>
+<p>See the simulation vignette for an example of how you can use
+functions in the FETWFE package to simulate panel data.</p>
 </div>
 </div>
 <div id="conclusion" class="section level1">
@@ -742,16 +861,17 @@ package!</strong></p>
 <div id="references" class="section level1">
 <h1>References</h1>
 <ul>
+<li>Cheng, C., &amp; Hoekstra, M. (2013). Does Strengthening
+Self-Defense Law Deter Crime or Escalate Violence? Evidence from
+Expansions to Castle Doctrine. <em>Journal of Human Resources</em>,
+48(3), 821-854.</li>
 <li>Faletto, G. (2025). Fused Extended Two-Way Fixed Effects for
 Difference-in-Differences with Staggered Adoptions. <a href="https://arxiv.org/abs/2312.05985">arXiv preprint
 arXiv:2312.05985</a>.</li>
-<li>Goodman-Bacon, A. (2021). Difference-in-Differences with variation
-in treatment timing. <em>Journal of Econometrics</em>.</li>
 <li>Flack, E., &amp; Jee, E. (2020). bacondecomp: Goodman-Bacon
 Decomposition. R package version 0.1.1. <a href="https://CRAN.R-project.org/package=bacondecomp">https://CRAN.R-project.org/package=bacondecomp</a>.</li>
-<li>Stevenson, B., &amp; Wolfers, J. (2006). Bargaining in the shadow of
-the law: Divorce laws and family distress. <em>The Quarterly Journal of
-Economics</em>, 121(1), 267-288.</li>
+<li>Kock, A. B. (2013). Oracle inequalities for high-dimensional
+nonparametric models. <em>Econometric Theory</em>.</li>
 </ul>
 </div>
 
@@ -760,15 +880,6 @@ Economics</em>, 121(1), 267-288.</li>
 <!-- code folding -->
 
 
-<!-- dynamically load mathjax for compatibility with self-contained -->
-<script>
-  (function () {
-    var script = document.createElement("script");
-    script.type = "text/javascript";
-    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
-    document.getElementsByTagName("head")[0].appendChild(script);
-  })();
-</script>
 
 </body>
 </html>

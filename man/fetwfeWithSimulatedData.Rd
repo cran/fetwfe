@@ -12,7 +12,9 @@ fetwfeWithSimulatedData(
   q = 0.5,
   verbose = FALSE,
   alpha = 0.05,
-  add_ridge = FALSE
+  add_ridge = FALSE,
+  allow_no_never_treated = TRUE,
+  se_type = "default"
 )
 }
 \arguments{
@@ -58,15 +60,35 @@ for the cohort average treatment effects that will be returned in \code{catt_df}
 \item{add_ridge}{(Optional.) Logical; if TRUE, adds a small amount of ridge
 regularization to the (untransformed) coefficients to stabilize estimation.
 Default is FALSE.}
+
+\item{allow_no_never_treated}{(Optional.) Logical; if \code{TRUE} (default) and
+the input panel contains no never-treated units, the panel is auto-truncated
+by dropping time periods at and after the latest cohort's start time --- the
+units in that latest cohort then serve as the never-treated comparison group
+in the retained sub-panel --- with a warning naming the dropped periods. If
+\code{FALSE}, the estimator stops with an error in this case (the package's
+behavior prior to version 1.5.6). The argument has no effect when the input
+already contains never-treated units. Default is \code{TRUE}.}
+
+\item{se_type}{Character; one of \code{"default"} (the package's
+Assumption-F1-based standard error from the paper) or \code{"cluster"}
+(an \emph{experimental} unit-clustered Liang-Zeger sandwich SE on the
+bridge-selected support; see the companion vignette \code{inference_vignette}
+for the formula, the assumptions, and the theory-pending caveat).
+\code{"cluster"} is only meaningful when \code{q < 1} (the bridge oracle property
+is required); for \code{q >= 1} the SE will be \code{NA} regardless of \code{se_type}.
+Default is \code{"default"}.}
 }
 \value{
 An object of class \code{fetwfe} containing the following elements:
 \item{att_hat}{The estimated overall average treatment effect for a randomly selected treated unit.}
 \item{att_se}{If \code{q < 1}, a standard error for the ATT. If \code{indep_counts} was provided, this standard error is asymptotically exact; if not, it is asymptotically conservative. If \code{q >= 1}, this will be NA.}
+\item{att_p_value}{A two-sided p-value for the overall ATT against the null \code{H_0: tau = 0}, computed as \verb{2 * pnorm(-|att_hat / att_se|)}. \code{NA} if \code{att_se} is zero or \code{NA} (e.g., under the bridge solver's selected-out fallback). See the package vignette section "Testing the zero-effect null" for interpretation guidance under selection consistency.}
+\item{att_selected}{Logical scalar; \code{TRUE} if \code{att_hat} is not exactly zero (i.e., at least one cohort's bridge-penalized coefficient survived selection), \code{FALSE} otherwise. Under FETWFE Theorem 6.2 (restriction selection consistency), \code{att_selected = FALSE} is the asymptotic statement that the truth is zero. For ridge (\code{q = 2}) the bridge solver does not zero coefficients, so this will typically be \code{TRUE}.}
 \item{catt_hats}{A named vector containing the estimated average treatment effects for each cohort.}
 \item{catt_ses}{If \code{q < 1}, a named vector containing the (asymptotically exact, non-conservative) standard errors for the estimated average treatment effects within each cohort.}
 \item{cohort_probs}{A vector of the estimated probabilities of being in each cohort conditional on being treated, which was used in calculating \code{att_hat}. If \code{indep_counts} was provided, \code{cohort_probs} was calculated from that; otherwise, it was calculated from the counts of units in each treated cohort in \code{pdata}.}
-\item{catt_df}{A dataframe displaying the cohort names, average treatment effects, standard errors, and \code{1 - alpha} confidence interval bounds.}
+\item{catt_df}{A dataframe displaying the cohort names, average treatment effects, standard errors, \code{1 - alpha} confidence interval bounds, per-cohort p-values (\code{P_value}), and a \code{selected} logical flag (\code{TRUE} when the bridge penalty left the cohort's CATT nonzero). For selected-out cohorts (\code{selected = FALSE}), \code{P_value} is \code{NA} --- the inferential content lives in \code{selected}.}
 \item{beta_hat}{The full vector of estimated coefficients.}
 \item{treat_inds}{The indices of \code{beta_hat} corresponding to the treatment effects for each cohort at each time.}
 \item{treat_int_inds}{The indices of \code{beta_hat} corresponding to the interactions between the treatment effects for each cohort at each time and the covariates.}
@@ -84,12 +106,35 @@ An object of class \code{fetwfe} containing the following elements:
 \item{d}{The final number of covariates that appear in the final data set (after any covariates may have been removed because they contained missing values or all contained the same value for every unit).}
 \item{p}{The final number of columns in the full set of covariates used to estimate the model.}
 \item{alpha}{The alpha level used for confidence intervals.}
+\item{cohort_probs_overall}{A vector of the estimated cohort probabilities
+on the overall sample (treated and untreated), used in computing the
+variance of the overall ATT.}
+\item{indep_counts_used}{Logical scalar; \code{TRUE} if a valid \code{indep_counts}
+argument was provided and used for asymptotically-exact ATT inference,
+\code{FALSE} otherwise.}
+\item{se_type}{Character scalar; the \code{se_type} argument the user passed
+(\code{"default"} or \code{"cluster"}).}
+\item{y_mean}{Numeric scalar; the mean of the original (pre-centering)
+response. Stored so downstream methods (\code{augment()}, \code{predict()})
+can return fitted values on the original-response scale.}
+\item{response_col_name}{Character scalar; the name of the response
+column in the original \code{pdata}. Consumed by \verb{augment.<class>()}.}
+\item{time_var, unit_var, treatment}{Character scalars; the
+\code{time_var} / \code{unit_var} / \code{treatment} arguments the user passed.
+Consumed by \verb{augment.<class>()} when auto-aligning a user-supplied
+panel to the fitted design (e.g., dropping first-period-treated
+units the estimator removed internally, and sorting rows to match
+the design matrix's internal \verb{(unit, time)} order).}
+\item{covs}{Character vector; the original \code{covs} argument the user
+passed (before any factor expansion the estimator performed
+internally). Consumed by \verb{augment.<class>()}.}
 \item{internal}{A list containing internal outputs that are typically not needed for interpretation:
 \describe{
 \item{X_ints}{The design matrix created containing all interactions, time and cohort dummies, etc.}
 \item{y}{The vector of responses, containing \code{nrow(X_ints)} entries.}
 \item{X_final}{The design matrix after applying the change in coordinates to fit the model and also multiplying on the left by the square root inverse of the estimated covariance matrix for each unit.}
 \item{y_final}{The final response after multiplying on the left by the square root inverse of the estimated covariance matrix for each unit.}
+\item{theta_hat}{The vector of estimated coefficients in the transformed (fused) space, including the intercept as the first element.}
 \item{calc_ses}{Logical indicating whether standard errors were calculated.}
 }
 }

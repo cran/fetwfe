@@ -1,0 +1,202 @@
+---
+title: "Comparison Estimators: ETWFE and BETWFE"
+author: "Gregory Faletto"
+date: "`r Sys.Date()`"
+output:
+  rmarkdown::html_vignette:
+    toc: true
+    math_method: "mathml"
+    output_file: "FETWFE_Comparison_Estimators_Vignette.html"
+vignette: >
+  %\VignetteIndexEntry{Comparison Estimators: ETWFE and BETWFE}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup}
+library(fetwfe)
+```
+
+# Introduction
+
+The `{fetwfe}` package implements `fetwfe()` as its recommended estimator for difference-in-differences with staggered adoptions. It also exports two related estimators that serve as comparison baselines:
+
+- `etwfe()` — Wooldridge-style extended two-way fixed effects.
+- `betwfe()` — bridge-penalized ETWFE; like `fetwfe()` but without the fusion transformation.
+
+This vignette demonstrates both, on simulated data so we can compare each estimator against the known true treatment effects.
+
+For background on staggered-adoption DiD and a real-data application of the recommended `fetwfe()` estimator, see [the main vignette](https://CRAN.R-project.org/package=fetwfe). For the underlying simulation pipeline used here, see [the simulation vignette](https://CRAN.R-project.org/package=fetwfe). For methodological details, see [Faletto (2025)](https://arxiv.org/abs/2312.05985).
+
+All three estimators (`fetwfe()`, `etwfe()`, `betwfe()`) accept the same call signature, so a user familiar with `fetwfe()` can drop in `etwfe()` or `betwfe()` simply by changing the function name. Below we use the `*WithSimulatedData()` wrappers to keep the simulation flow concise.
+
+# Setup: simulating panel data
+
+We use the `genCoefs()` + `simulateData()` pipeline (the same approach as the simulation vignette). The parameters below are chosen so that both `etwfe()` and `betwfe()` are well-conditioned: enough cohorts and units that `etwfe()` doesn't run into rank-deficiency, and enough density in the true coefficient vector that `betwfe()`'s bridge regularization shrinks toward zero without zeroing everything out.
+
+```{r}
+sim_coefs <- genCoefs(
+  R         = 3,
+  T         = 6,
+  d         = 2,
+  density   = 0.5,
+  eff_size  = 2,
+  seed      = 20260510
+)
+
+sim_data <- simulateData(
+  sim_coefs,
+  N            = 120,
+  sig_eps_sq   = 1,
+  sig_eps_c_sq = 1
+)
+
+# True treatment effects (we'll compare estimator output to these):
+true_tes <- getTes(sim_coefs)
+cat("True overall ATT:", true_tes$att_true, "\n")
+print(true_tes$actual_cohort_tes)
+```
+
+# `etwfe()`: extended TWFE without penalty
+
+`etwfe()` implements the Wooldridge-style extended two-way fixed effects estimator: cohort-time dummy interactions estimated by OLS, with no regularization. Under the model's assumptions it produces unbiased point estimates and asymptotically exact standard errors. The trade-off compared to `fetwfe()` is variance: with no fusion penalty, the estimator can be high-variance in over-parameterized regimes, and it errors out entirely when cohorts are small relative to the number of covariates (`(d + 1)` units per cohort is the floor).
+
+```{r}
+res_etwfe <- etwfeWithSimulatedData(sim_data)
+
+summary(res_etwfe)
+```
+
+We can compare the estimated overall ATT to the truth:
+
+```{r}
+cat("True ATT:     ", true_tes$att_true, "\n")
+cat("Estimated ATT:", res_etwfe$att_hat, "\n")
+cat("Squared error:", (res_etwfe$att_hat - true_tes$att_true)^2, "\n")
+```
+
+# `betwfe()`: bridge-penalized ETWFE
+
+`betwfe()` extends `etwfe()` by adding a bridge (`L_q`, `0 < q < 1`) regularization penalty on the cohort-time effects. Compared to `etwfe()`, this trades a small amount of bias for lower variance — the same idea as `fetwfe()`, but without the fusion transformation that `fetwfe()` applies. So `betwfe()` is essentially "fetwfe minus the fusion."
+
+```{r}
+res_betwfe <- betwfeWithSimulatedData(sim_data)
+
+summary(res_betwfe)
+```
+
+Comparing against the truth and against `etwfe()`:
+
+```{r}
+cat("True ATT:        ", true_tes$att_true, "\n")
+cat("etwfe() ATT:     ", res_etwfe$att_hat, "\n")
+cat("betwfe() ATT:    ", res_betwfe$att_hat, "\n")
+cat("etwfe sq. error: ", (res_etwfe$att_hat - true_tes$att_true)^2, "\n")
+cat("betwfe sq. error:", (res_betwfe$att_hat - true_tes$att_true)^2, "\n")
+```
+
+The bridge penalty in `betwfe()` shrinks the estimate toward zero relative to `etwfe()`. On this regime, that produces a noticeable bias — the textbook bias-variance trade-off in action. In other regimes (sparser true effects, or noisier data), the bias from regularization is more than offset by reduced variance, and `betwfe()` outperforms `etwfe()`.
+
+# No-covariate setting
+
+The examples above use a panel with `d = 2` time-invariant covariates. The package equally supports the no-covariate case by passing `covs = c()` to any estimator (or by generating data with `genCoefs(d = 0, ...)`). This section runs the same simulated regime with no covariates, side-by-side, so a user can see what `etwfe()` and `fetwfe()` look like in the simpler setting.
+
+```{r}
+sim_coefs_d0 <- genCoefs(
+  R         = 3,
+  T         = 6,
+  d         = 0,
+  density   = 0.5,
+  eff_size  = 2,
+  seed      = 20260510
+)
+
+sim_data_d0 <- simulateData(
+  sim_coefs_d0,
+  N            = 120,
+  sig_eps_sq   = 1,
+  sig_eps_c_sq = 1
+)
+
+true_tes_d0 <- getTes(sim_coefs_d0)
+cat("True overall ATT (no covariates):", true_tes_d0$att_true, "\n")
+```
+
+`etwfe()` in the no-covariate setting:
+
+```{r}
+res_etwfe_d0 <- etwfeWithSimulatedData(sim_data_d0)
+summary(res_etwfe_d0)
+```
+
+`fetwfe()` in the no-covariate setting:
+
+```{r}
+res_fetwfe_d0 <- fetwfeWithSimulatedData(sim_data_d0)
+summary(res_fetwfe_d0)
+```
+
+Side-by-side overall ATT estimates against the truth:
+
+```{r}
+cat("True ATT:        ", true_tes_d0$att_true, "\n")
+cat("etwfe() ATT:     ", res_etwfe_d0$att_hat, "\n")
+cat("fetwfe() ATT:    ", res_fetwfe_d0$att_hat, "\n")
+cat("etwfe sq. error: ", (res_etwfe_d0$att_hat - true_tes_d0$att_true)^2, "\n")
+cat("fetwfe sq. error:", (res_fetwfe_d0$att_hat - true_tes_d0$att_true)^2, "\n")
+```
+
+Two qualitative differences to note in the no-covariate regime:
+
+- **Smaller design matrix.** Without covariates and their cohort/time/treatment interactions, the underlying regression has many fewer columns, so both estimators converge faster and `etwfe()` becomes rank-stable at smaller cohort sizes (the `(d + 1)`-units-per-cohort floor that `etwfe()` enforces drops to just one unit per cohort).
+- **Standard errors typically widen.** Covariates that explain residual variance are absent, so the idiosyncratic-noise variance `sig_eps_sq` enters the SEs without that explanatory cushion. The signal-to-noise ratio on the treatment-effect coefficients drops, which is the trade-off for the simpler model.
+
+The package handles `covs = c()` end-to-end without any special-casing on the user's side: the data-prep pipeline (`prep_for_etwfe_core` in `R/core_funcs.R`) dispatches on `d == 0` and skips the covariate-interaction columns automatically. The same applies to `betwfe()` and `twfeCovs()`.
+
+# Visualizing event-time effects
+
+Each of the three estimator outputs supports `plot()` (which dispatches to a method) and a companion `eventStudy()` helper that returns a tidy data frame of pooled-event-time treatment-effect estimates. The plot is an event study: x-axis is event time `e = t - r` (calendar time minus the cohort's first-treated time), y-axis is the cohort-weighted average of cell-level treatment-effect estimates at each event time, with confidence intervals. Pooling weights are sample-cohort-size weights (matching `did::aggte(type = "dynamic")` convention). The variance combines a regression-coefficient term and a cohort-probability term, mirroring the package's existing overall-ATT SE machinery.
+
+Event-time estimates from `etwfe()`:
+
+```{r}
+eventStudy(res_etwfe)
+```
+
+```{r, eval = requireNamespace("ggplot2", quietly = TRUE)}
+plot(res_etwfe)
+```
+
+Event-time estimates from `betwfe()` on the same simulated panel:
+
+```{r}
+eventStudy(res_betwfe)
+```
+
+```{r, eval = requireNamespace("ggplot2", quietly = TRUE)}
+plot(res_betwfe)
+```
+
+`eventStudy()` returns the underlying data; `plot()` returns a ggplot2 object you can further customize. `ggplot2` is in `Suggests:`, so it must be installed to use the `plot()` methods; the estimators themselves work without it.
+
+# When to use which
+
+`fetwfe()` is the recommended estimator for production use; `etwfe()` and `betwfe()` are useful as comparisons or as building blocks for understanding what `fetwfe()` is doing.
+
+- **`fetwfe()`** — default choice. Combines bridge regularization with the fusion transformation for both bias and variance reduction. See the main `fetwfe()` vignette for a real-data application and the simulation vignette for the simulation workflow.
+- **`betwfe()`** — alternative when you want regularization but not the fusion transformation. Useful for inspecting the effect of fusion alone — compare `betwfe()` vs. `fetwfe()` on the same data and the difference is what fusion adds.
+- **`etwfe()`** — useful as a baseline. On well-conditioned data it produces unbiased point estimates with valid standard errors. On small or over-parameterized data it can fail with rank-deficient cohort errors, which `fetwfe()`'s regularization avoids.
+
+For a real-data application of the recommended estimator, see the main `fetwfe()` vignette.
+
+# References
+
+- Faletto, G. (2025). Fused Extended Two-Way Fixed Effects for Difference-in-Differences with Staggered Adoptions. [arXiv preprint arXiv:2312.05985](https://arxiv.org/abs/2312.05985).
+- Wooldridge, J. M. (2021). Two-Way Fixed Effects, the Two-Way Mundlak Regression, and Difference-in-Differences Estimators. *SSRN Working Paper No. 3906345*.

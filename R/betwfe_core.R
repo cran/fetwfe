@@ -49,15 +49,17 @@
 #' noise assumed to apply to each observation. See Section 2 of Faletto (2025)
 #' for details. It is best to provide this variance if it is known (for example,
 #' if you are using simulated data). If this variance is unknown, this argument
-#' can be omitted, and the variance will be estimated using the estimator from
-#' Pesaran (2015, Section 26.5.1) with ridge regression. Default is NA.
+#' can be omitted, and the variance will be estimated by
+#' REML on the linear mixed-effects model `y ~ X + (1 | unit)` via
+#' `lme4::lmer` (Bates et al. 2015; Patterson & Thompson 1971). Default is NA.
 #' @param sig_eps_c_sq (Optional.) Numeric; the variance of the unit-level IID
 #' noise (random effects) assumed to apply to each observation. See Section 2 of
 #' Faletto (2025) for details. It is best to provide this variance if it is
 #' known (for example, if you are using simulated data). If this variance is
 #' unknown, this argument can be omitted, and the variance will be estimated
-#' using the estimator from Pesaran (2015, Section 26.5.1) with ridge
-#' regression. Default is NA.
+#' by REML via `lme4::lmer` on the
+#' linear mixed-effects model `y ~ X + (1 | unit)` (Bates et al. 2015;
+#' Patterson & Thompson 1971). Default is NA.
 #' @param lambda.max (Optional.) Numeric. A penalty parameter `lambda` will be
 #' selected over a grid search by BIC in order to select a single model. The
 #' largest `lambda` in the grid will be `lambda.max`. If no `lambda.max` is
@@ -91,11 +93,40 @@
 #' @param add_ridge (Optional.) Logical; if TRUE, adds a small amount of ridge
 #' regularization to the (untransformed) coefficients to stabilize estimation.
 #' Default is FALSE.
-#' @return A named list with the following elements: \item{att_hat}{The
+#' @param allow_no_never_treated (Optional.) Logical; if `TRUE` (default) and
+#' the input panel contains no never-treated units, the panel is auto-truncated
+#' by dropping time periods at and after the latest cohort's start time --- the
+#' units in that latest cohort then serve as the never-treated comparison group
+#' in the retained sub-panel --- with a warning naming the dropped periods. If
+#' `FALSE`, the estimator stops with an error in this case (the package's
+#' behavior prior to version 1.5.6). The argument has no effect when the input
+#' already contains never-treated units. Default is `TRUE`.
+#' @param se_type Character; one of `"default"` (the package's
+#' Assumption-F1-based standard error from the paper) or `"cluster"`
+#' (an *experimental* unit-clustered Liang-Zeger sandwich SE on the
+#' bridge-selected support; see the companion vignette `inference_vignette`
+#' for the formula, the assumptions, and the theory-pending caveat).
+#' `"cluster"` is only meaningful when `q < 1` (the bridge oracle property
+#' is required); for `q >= 1` the SE will be `NA` regardless of `se_type`.
+#' Default is `"default"`.
+#' @return An object of class \code{betwfe} containing the following elements:
+#' \item{att_hat}{The
 #' estimated overall average treatment effect for a randomly selected treated
 #' unit.} \item{att_se}{If `q < 1`, a standard error for the ATT. If
 #' `indep_counts` was provided, this standard error is asymptotically exact; if
 #' not, it is asymptotically conservative. If `q >= 1`, this will be NA.}
+#' \item{att_p_value}{A two-sided p-value for the overall ATT against the
+#' null `H_0: tau = 0`, computed as `2 * pnorm(-|att_hat / att_se|)`. `NA` if
+#' `att_se` is zero or `NA` (e.g., under the bridge solver's selected-out
+#' fallback).}
+#' \item{att_selected}{Logical scalar; `TRUE` if `att_hat` is not exactly zero,
+#' `FALSE` otherwise. BETWFE uses bridge regression directly on the
+#' coefficients (rather than on the fused restrictions used by FETWFE); under
+#' the bridge oracle property of Kock (2013), `att_selected = FALSE` is an
+#' analogous asymptotic statement that the truth is zero under a sparsity
+#' assumption different from the one Theorem 6.2 establishes for FETWFE. For
+#' ridge (`q = 2`) the bridge solver does not zero coefficients, so this will
+#' typically be `TRUE`.}
 #' \item{catt_hats}{A named vector containing the estimated average treatment
 #' effects for each cohort.} \item{catt_ses}{If `q < 1`, a named vector
 #' containing the (asymptotically exact, non-conservative) standard errors for
@@ -105,8 +136,11 @@
 #' If `indep_counts` was provided, `cohort_probs` was calculated from that;
 #' otherwise, it was calculated from the counts of units in each treated
 #' cohort in `pdata`.} \item{catt_df}{A dataframe displaying the cohort names,
-#' average treatment effects, standard errors, and `1 - alpha` confidence
-#' interval bounds.} \item{beta_hat}{The full vector of estimated coefficients.}
+#' average treatment effects, standard errors, `1 - alpha` confidence
+#' interval bounds, per-cohort p-values (`P_value`), and a `selected` logical
+#' flag (`TRUE` when the bridge penalty left the cohort's CATT nonzero). For
+#' selected-out cohorts (`selected = FALSE`), `P_value` is `NA`.}
+#' \item{beta_hat}{The full vector of estimated coefficients.}
 #' \item{treat_inds}{The indices of `beta_hat` corresponding to
 #' the treatment effects for each cohort at each time.}
 #' \item{treat_int_inds}{The indices of `beta_hat` corresponding to the
@@ -146,33 +180,64 @@
 #' have been removed because they contained missing values or all contained the
 #' same value for every unit).} \item{p}{The final number of columns in the full
 #' set of covariates used to estimate the model.}
+#' \item{y_mean}{Numeric scalar; mean of the original (pre-centering) response.
+#' Stored so downstream methods (`augment()`, `predict()`) can return fitted
+#' values on the original-response scale.}
+#' \item{response_col_name}{Character scalar; the response column name in
+#' the original `pdata`. Consumed by `augment.betwfe()`.}
+#' \item{time_var, unit_var, treatment}{Character scalars; the corresponding
+#' arguments the user passed. Consumed by `augment.betwfe()` when auto-aligning
+#' a user-supplied panel to the fitted design.}
+#' \item{covs}{Character vector; the original `covs` argument (pre-factor-
+#' expansion). Consumed by `augment.betwfe()`.}
+#' \item{alpha}{The alpha level used for confidence intervals.}
+#' \item{calc_ses}{Logical indicating whether standard errors were calculated.}
+#' \item{cohort_probs_overall}{A vector of the estimated cohort probabilities
+#' on the overall sample (treated and untreated), used in computing the
+#' variance of the overall ATT.}
+#' \item{indep_counts_used}{Logical scalar; `TRUE` if a valid `indep_counts`
+#' argument was provided and used for asymptotically-exact ATT inference,
+#' `FALSE` otherwise.}
+#' \item{se_type}{Character scalar; the `se_type` argument the user passed
+#' (`"default"` or `"cluster"`).}
 #' @author Gregory Faletto
 #' @references
 #' Faletto, G (2025). Fused Extended Two-Way Fixed Effects for
 #' Difference-in-Differences with Staggered Adoptions.
 #' \emph{arXiv preprint arXiv:2312.05985}.
 #' \url{https://arxiv.org/abs/2312.05985}.
-#' Pesaran, M. H. . Time Series and Panel Data Econometrics. Number 9780198759980 in OUP
-#' Catalogue. Oxford University Press, 2015. URL
-#' \url{https://ideas.repec.org/b/oxp/obooks/9780198759980.html}.
-#' @examples
-#' set.seed(23451)
 #'
+#' Bates, D., Maechler, M., Bolker, B., & Walker, S. (2015). Fitting
+#' Linear Mixed-Effects Models Using lme4. \emph{Journal of Statistical
+#' Software}, 67(1), 1-48. \doi{10.18637/jss.v067.i01}.
+#'
+#' Patterson, H. D., & Thompson, R. (1971). Recovery of inter-block
+#' information when block sizes are unequal. \emph{Biometrika}, 58(3),
+#' 545-554.
+#'
+#' Pinheiro, J. C., & Bates, D. M. (2000). \emph{Mixed-Effects Models in
+#' S and S-PLUS}. Springer.
+#' @examples
 #' library(bacondecomp)
 #'
-#' data(divorce)
+#' data(castle)
 #'
-#' # sig_eps_sq and sig_eps_c_sq, calculated in a separate run of `fetwfe(),
-#' # are provided to speed up the computation of the example
+#' # Response: the log homicide rate. Treatment: `cdl` records the share of
+#' # the year the castle-doctrine law was in effect, so `cdl > 0` gives the
+#' # absorbing 0/1 treatment indicator. No `covs`: castle's smallest
+#' # adoption cohorts contain a single state, so the design is
+#' # rank-deficient once any covariate is added.
+#' castle$l_homicide <- log(castle$homicide)
+#' castle$treated <- as.integer(castle$cdl > 0)
+#'
+#' # On this panel betwfe's bridge penalty selects every cohort out, so the
+#' # estimated ATT and cohort effects below are all zero.
 #' res <- betwfe(
-#'     pdata = divorce[divorce$sex == 2, ],
+#'     pdata = castle,
 #'     time_var = "year",
-#'     unit_var = "st",
-#'     treatment = "changed",
-#'     covs = c("murderrate", "lnpersinc", "afdcrolls"),
-#'     response = "suiciderate_elast_jag",
-#'     sig_eps_sq = 0.1025361,
-#'     sig_eps_c_sq = 4.227651e-35,
+#'     unit_var = "state",
+#'     treatment = "treated",
+#'     response = "l_homicide",
 #'     verbose = TRUE)
 #'
 #' # Average treatment effect on the treated units (in percentage point
@@ -213,10 +278,16 @@ betwfe <- function(
 	q = 0.5,
 	verbose = FALSE,
 	alpha = 0.05,
-	add_ridge = FALSE
+	add_ridge = FALSE,
+	allow_no_never_treated = TRUE,
+	se_type = "default"
 ) {
-	# Check inputs
-	ret <- checkFetwfeInputs(
+	se_type <- match.arg(se_type, c("default", "cluster"))
+
+	covs_orig <- covs
+
+	# Steps 3-5: input validation + auto-truncation + design-matrix prep.
+	prep <- .run_estimator_input_prep(
 		pdata = pdata,
 		time_var = time_var,
 		unit_var = unit_var,
@@ -228,44 +299,30 @@ betwfe <- function(
 		sig_eps_c_sq = sig_eps_c_sq,
 		lambda.max = lambda.max,
 		lambda.min = lambda.min,
-		nlambda = nlambda,
 		q = q,
 		verbose = verbose,
 		alpha = alpha,
-		add_ridge = add_ridge
+		add_ridge = add_ridge,
+		allow_no_never_treated = allow_no_never_treated,
+		estimator_type = "fetwfe"
 	)
 
-	pdata <- ret$pdata
-	indep_count_data_available = ret$indep_count_data_available
+	pdata <- prep$pdata
+	covs <- prep$covs
+	X_ints <- prep$X_ints
+	y <- prep$y
+	y_mean <- prep$y_mean
+	N <- prep$N
+	T <- prep$T
+	d <- prep$d
+	p <- prep$p
+	in_sample_counts <- prep$in_sample_counts
+	num_treats <- prep$num_treats
+	first_inds <- prep$first_inds
+	R <- prep$R
+	indep_count_data_available <- prep$indep_count_data_available
 
-	rm(ret)
-
-	res1 <- prep_for_etwfe_core(
-		pdata = pdata,
-		response = response,
-		time_var = time_var,
-		unit_var = unit_var,
-		treatment = treatment,
-		covs = covs,
-		verbose = verbose,
-		indep_count_data_available = indep_count_data_available,
-		indep_counts = indep_counts
-	)
-
-	pdata <- res1$pdata
-	covs <- res1$covs
-	X_ints <- res1$X_ints
-	y <- res1$y
-	N <- res1$N
-	T <- res1$T
-	d <- res1$d
-	p <- res1$p
-	in_sample_counts <- res1$in_sample_counts
-	num_treats <- res1$num_treats
-	first_inds <- res1$first_inds
-	R <- res1$R
-
-	rm(res1)
+	rm(prep)
 
 	res <- betwfe_core(
 		X_ints = X_ints,
@@ -286,37 +343,32 @@ betwfe <- function(
 		q = q,
 		verbose = verbose,
 		alpha = alpha,
-		add_ridge = add_ridge
+		add_ridge = add_ridge,
+		se_type = se_type
 	)
 
-	if (indep_count_data_available) {
-		stopifnot(!is.na(res$indep_att_hat))
+	att_branch <- .select_att_branch(
+		res,
+		indep_count_data_available = indep_count_data_available,
+		q = q
+	)
+	att_hat <- att_branch$att_hat
+	att_se <- att_branch$att_se
+	cohort_probs <- att_branch$cohort_probs
+	cohort_probs_overall <- att_branch$cohort_probs_overall
 
-		if ((q < 1) & res$calc_ses) {
-			stopifnot(!is.na(res$indep_att_se))
-		}
+	att_p_value <- .compute_p_values(att_hat, att_se)
+	att_selected <- att_hat != 0
 
-		stopifnot(all(!is.na(res$indep_cohort_probs)))
-		att_hat <- res$indep_att_hat
-		att_se <- res$indep_att_se
-		cohort_probs <- res$indep_cohort_probs
-	} else {
-		stopifnot(!is.na(res$in_sample_att_hat))
-
-		if ((q < 1) & res$calc_ses) {
-			stopifnot(!is.na(res$in_sample_att_se))
-		}
-
-		att_hat <- res$in_sample_att_hat
-		att_se <- res$in_sample_att_se
-		cohort_probs <- res$cohort_probs
-	}
-	return(list(
+	out <- list(
 		att_hat = att_hat,
 		att_se = att_se,
+		att_p_value = att_p_value,
+		att_selected = att_selected,
 		catt_hats = res$catt_hats,
 		catt_ses = res$catt_ses,
 		cohort_probs = cohort_probs,
+		cohort_probs_overall = cohort_probs_overall,
 		catt_df = res$catt_df,
 		beta_hat = res$beta_hat,
 		treat_inds = res$treat_inds,
@@ -338,8 +390,21 @@ betwfe <- function(
 		R = res$R,
 		d = res$d,
 		p = res$p,
-		calc_ses = res$calc_ses
-	))
+		calc_ses = res$calc_ses,
+		alpha = alpha,
+		se_type = se_type,
+		indep_counts_used = indep_count_data_available,
+		y_mean = y_mean,
+		response_col_name = response,
+		time_var = time_var,
+		unit_var = unit_var,
+		treatment = treatment,
+		covs = covs_orig
+	)
+	# Validate constructed object's contracts (#85).
+	.validate_betwfe(out)
+	class(out) <- "betwfe"
+	return(out)
 }
 
 #' Run BETWFE on Simulated Data
@@ -386,11 +451,40 @@ betwfe <- function(
 #' @param add_ridge (Optional.) Logical; if TRUE, adds a small amount of ridge
 #' regularization to the (untransformed) coefficients to stabilize estimation.
 #' Default is FALSE.
-#' @return A named list with the following elements: \item{att_hat}{The
+#' @param allow_no_never_treated (Optional.) Logical; if `TRUE` (default) and
+#' the input panel contains no never-treated units, the panel is auto-truncated
+#' by dropping time periods at and after the latest cohort's start time --- the
+#' units in that latest cohort then serve as the never-treated comparison group
+#' in the retained sub-panel --- with a warning naming the dropped periods. If
+#' `FALSE`, the estimator stops with an error in this case (the package's
+#' behavior prior to version 1.5.6). The argument has no effect when the input
+#' already contains never-treated units. Default is `TRUE`.
+#' @param se_type Character; one of `"default"` (the package's
+#' Assumption-F1-based standard error from the paper) or `"cluster"`
+#' (an *experimental* unit-clustered Liang-Zeger sandwich SE on the
+#' bridge-selected support; see the companion vignette `inference_vignette`
+#' for the formula, the assumptions, and the theory-pending caveat).
+#' `"cluster"` is only meaningful when `q < 1` (the bridge oracle property
+#' is required); for `q >= 1` the SE will be `NA` regardless of `se_type`.
+#' Default is `"default"`.
+#' @return An object of class \code{betwfe} containing the following elements:
+#' \item{att_hat}{The
 #' estimated overall average treatment effect for a randomly selected treated
 #' unit.} \item{att_se}{If `q < 1`, a standard error for the ATT. If
 #' `indep_counts` was provided, this standard error is asymptotically exact; if
 #' not, it is asymptotically conservative. If `q >= 1`, this will be NA.}
+#' \item{att_p_value}{A two-sided p-value for the overall ATT against the
+#' null `H_0: tau = 0`, computed as `2 * pnorm(-|att_hat / att_se|)`. `NA` if
+#' `att_se` is zero or `NA` (e.g., under the bridge solver's selected-out
+#' fallback).}
+#' \item{att_selected}{Logical scalar; `TRUE` if `att_hat` is not exactly zero,
+#' `FALSE` otherwise. BETWFE uses bridge regression directly on the
+#' coefficients (rather than on the fused restrictions used by FETWFE); under
+#' the bridge oracle property of Kock (2013), `att_selected = FALSE` is an
+#' analogous asymptotic statement that the truth is zero under a sparsity
+#' assumption different from the one Theorem 6.2 establishes for FETWFE. For
+#' ridge (`q = 2`) the bridge solver does not zero coefficients, so this will
+#' typically be `TRUE`.}
 #' \item{catt_hats}{A named vector containing the estimated average treatment
 #' effects for each cohort.} \item{catt_ses}{If `q < 1`, a named vector
 #' containing the (asymptotically exact, non-conservative) standard errors for
@@ -400,8 +494,11 @@ betwfe <- function(
 #' If `indep_counts` was provided, `cohort_probs` was calculated from that;
 #' otherwise, it was calculated from the counts of units in each treated
 #' cohort in `pdata`.} \item{catt_df}{A dataframe displaying the cohort names,
-#' average treatment effects, standard errors, and `1 - alpha` confidence
-#' interval bounds.} \item{beta_hat}{The full vector of estimated coefficients.}
+#' average treatment effects, standard errors, `1 - alpha` confidence
+#' interval bounds, per-cohort p-values (`P_value`), and a `selected` logical
+#' flag (`TRUE` when the bridge penalty left the cohort's CATT nonzero). For
+#' selected-out cohorts (`selected = FALSE`), `P_value` is `NA`.}
+#' \item{beta_hat}{The full vector of estimated coefficients.}
 #' \item{treat_inds}{The indices of `beta_hat` corresponding to
 #' the treatment effects for each cohort at each time.}
 #' \item{treat_int_inds}{The indices of `beta_hat` corresponding to the
@@ -441,6 +538,25 @@ betwfe <- function(
 #' have been removed because they contained missing values or all contained the
 #' same value for every unit).} \item{p}{The final number of columns in the full
 #' set of covariates used to estimate the model.}
+#' \item{alpha}{The alpha level used for confidence intervals.}
+#' \item{calc_ses}{Logical indicating whether standard errors were calculated.}
+#' \item{cohort_probs_overall}{A vector of the estimated cohort probabilities
+#' on the overall sample (treated and untreated), used in computing the
+#' variance of the overall ATT.}
+#' \item{indep_counts_used}{Logical scalar; `TRUE` if a valid `indep_counts`
+#' argument was provided and used for asymptotically-exact ATT inference,
+#' `FALSE` otherwise.}
+#' \item{se_type}{Character scalar; the `se_type` argument the user passed
+#' (`"default"` or `"cluster"`).}
+#' \item{y_mean}{Numeric scalar; mean of the original (pre-centering) response.
+#' Stored so downstream methods (`augment()`, `predict()`) can return fitted
+#' values on the original-response scale.}
+#' \item{response_col_name}{Character scalar; the response column name in
+#' the original `pdata`. Consumed by `augment.betwfe()`.}
+#' \item{time_var, unit_var, treatment}{Character scalars; the corresponding
+#' arguments the user passed.}
+#' \item{covs}{Character vector; the original `covs` argument (pre-factor-
+#' expansion).}
 #'
 #' @examples
 #' \dontrun{
@@ -462,8 +578,12 @@ betwfeWithSimulatedData <- function(
 	q = 0.5,
 	verbose = FALSE,
 	alpha = 0.05,
-	add_ridge = FALSE
+	add_ridge = FALSE,
+	allow_no_never_treated = TRUE,
+	se_type = "default"
 ) {
+	se_type <- match.arg(se_type, c("default", "cluster"))
+
 	if (!inherits(simulated_obj, "FETWFE_simulated")) {
 		stop("simulated_obj must be an object of class 'FETWFE_simulated'")
 	}
@@ -494,7 +614,9 @@ betwfeWithSimulatedData <- function(
 		q = q,
 		verbose = verbose,
 		alpha = alpha,
-		add_ridge = add_ridge
+		add_ridge = add_ridge,
+		allow_no_never_treated = allow_no_never_treated,
+		se_type = se_type
 	)
 
 	return(res)
@@ -544,6 +666,11 @@ betwfeWithSimulatedData <- function(
 #'   95% CIs). Default is 0.05.
 #' @param add_ridge (Optional) Logical; if `TRUE`, adds a small L2 penalty to
 #'   the coefficients to stabilize estimation. Default is `FALSE`.
+#' @param se_type Character; the standard-error type, one of `"default"` (the
+#'   package's Assumption-F1-based standard error from the paper) or `"cluster"`
+#'   (an experimental unit-clustered Liang-Zeger sandwich SE on the
+#'   bridge-selected support). See the exported wrapper `betwfe()` for details.
+#'   Default is `"default"`.
 #'
 #' @details
 #' The function executes the following main steps:
@@ -562,7 +689,10 @@ betwfeWithSimulatedData <- function(
 #'     }
 #'   \item **Optional Ridge Penalty:** If `add_ridge` is `TRUE`, `X_final_scaled`
 #'     (scaled version of `X_final`) and `y_final` are augmented to add an L2
-#'     penalty.
+#'     penalty. The augmentation uses the identity basis (via
+#'     `prep_for_etwfe_regression(..., is_fetwfe = FALSE)`) because BETWFE's
+#'     design is untransformed — same as ETWFE and `twfeCovs`, and unlike FETWFE
+#'     which uses the inverse fusion-transform basis.
 #'   \item **Cohort Probabilities:** Calculates cohort membership probabilities
 #'     conditional on being treated, using `in_sample_counts` and `indep_counts`
 #'     if available.
@@ -599,7 +729,7 @@ betwfeWithSimulatedData <- function(
 #'   \item{indep_att_se}{Standard error for `indep_att_hat` (NA if not applicable).}
 #'   \item{catt_hats}{A named vector of estimated CATTs for each cohort.}
 #'   \item{catt_ses}{A named vector of SEs for `catt_hats` (NA if `q >= 1`).}
-#'   \item{catt_df}{A data.frame summarizing CATTs, SEs, and confidence intervals.}
+#'   \item{catt_df}{A data.frame summarizing CATTs, SEs, confidence intervals, per-cohort p-values (`P_value`), and a `selected` logical flag (`TRUE` when the bridge penalty left the cohort's CATT nonzero).}
 #'   \item{beta_hat}{The vector of estimated coefficients.}
 #'   \item{treat_inds}{Indices in `beta_hat` corresponding to base treatment effects.}
 #'   \item{treat_int_inds}{Indices in `beta_hat` corresponding to treatment-covariate interactions.}
@@ -639,8 +769,10 @@ betwfe_core <- function(
 	q = 0.5,
 	verbose = FALSE,
 	alpha = 0.05,
-	add_ridge = FALSE
+	add_ridge = FALSE,
+	se_type = "default"
 ) {
+	se_type <- match.arg(se_type, c("default", "cluster"))
 	ret <- check_etwfe_core_inputs(
 		in_sample_counts = in_sample_counts,
 		N = N,
@@ -662,7 +794,7 @@ betwfe_core <- function(
 	if (any(!is.na(lambda.max))) {
 		stopifnot(is.numeric(lambda.max) | is.integer(lambda.max))
 		stopifnot(length(lambda.max) == 1)
-		stopifnot(lambda.max >= 0)
+		stopifnot(lambda.max > 0)
 	}
 
 	if (any(!is.na(lambda.min))) {
@@ -679,7 +811,7 @@ betwfe_core <- function(
 	stopifnot(q > 0)
 	stopifnot(q <= 2)
 
-	res <- prep_for_etwfe_regresion(
+	res <- prep_for_etwfe_regression(
 		verbose = verbose,
 		sig_eps_sq = sig_eps_sq,
 		sig_eps_c_sq = sig_eps_c_sq,
@@ -696,7 +828,8 @@ betwfe_core <- function(
 		first_inds = first_inds,
 		in_sample_counts = in_sample_counts,
 		indep_count_data_available = indep_count_data_available,
-		indep_counts = indep_counts
+		indep_counts = indep_counts,
+		is_fetwfe = FALSE
 	)
 
 	X_final_scaled <- res$X_final_scaled
@@ -720,58 +853,23 @@ betwfe_core <- function(
 	#
 	#
 
-	# Estimate bridge regression
-	if (verbose) {
-		message("Estimating bridge regression...")
-		t0 <- Sys.time()
-	}
-
-	if (!is.na(lambda.max) & !is.na(lambda.min)) {
-		fit <- grpreg::gBridge(
-			X = X_final_scaled,
-			y = y_final,
-			gamma = q,
-			lambda.max = lambda.max,
-			lambda.min = lambda.min,
-			nlambda = nlambda
-		)
-	} else if (!is.na(lambda.max)) {
-		fit <- grpreg::gBridge(
-			X = X_final_scaled,
-			y = y_final,
-			gamma = q,
-			lambda.max = lambda.max,
-			nlambda = nlambda
-		)
-	} else if (!is.na(lambda.min)) {
-		fit <- grpreg::gBridge(
-			X = X_final_scaled,
-			y = y_final,
-			gamma = q,
-			lambda.min = lambda.min,
-			nlambda = nlambda
-		)
-	} else {
-		fit <- grpreg::gBridge(
-			X = X_final_scaled,
-			y = y_final,
-			gamma = q,
-			nlambda = nlambda
-		)
-	}
-
-	if (verbose) {
-		message("Done! Time for estimation:")
-		message(Sys.time() - t0)
-	}
-
-	# For diagnostics later, store largest and smallest lambda, as well as
-	# corresponding smallest and largest model sizes, to return.
-	lambda.max <- max(fit$lambda)
-	lambda.max_model_size <- sum(fit$beta[, ncol(fit$beta)] != 0)
-
-	lambda.min <- min(fit$lambda)
-	lambda.min_model_size <- sum(fit$beta[, 1] != 0)
+	# Estimate bridge regression. The 4-way gBridge dispatch + lambda-path
+	# diagnostics are shared with fetwfe_core() via .fit_bridge_with_lambda_path()
+	# in R/utility.R (issue #119).
+	bridge_fit <- .fit_bridge_with_lambda_path(
+		X_final_scaled = X_final_scaled,
+		y_final = y_final,
+		q = q,
+		lambda.max = lambda.max,
+		lambda.min = lambda.min,
+		nlambda = nlambda,
+		verbose = verbose
+	)
+	fit <- bridge_fit$fit
+	lambda.max <- bridge_fit$lambda.max
+	lambda.min <- bridge_fit$lambda.min
+	lambda.max_model_size <- bridge_fit$lambda.max_model_size
+	lambda.min_model_size <- bridge_fit$lambda.min_model_size
 
 	# Select a single set of fitted coefficients by using BIC to choose among
 	# the penalties that were fitted
@@ -796,62 +894,35 @@ betwfe_core <- function(
 	stopifnot(length(c_names) == R)
 
 	# Indices corresponding to base treatment effects
-	treat_inds <- getTreatInds(R = R, T = T, d = d, num_treats = num_treats)
-
-	if (d > 0) {
-		stopifnot(max(treat_inds) + 1 <= p)
-		stopifnot(
-			max(treat_inds) == R + T - 1 + d + R * d + (T - 1) * d + num_treats
-		)
-
-		treat_int_inds <- (max(treat_inds) + 1):p
-
-		stopifnot(length(treat_int_inds) == num_treats * d)
-	} else {
-		stopifnot(max(treat_inds) <= p)
-		stopifnot(max(treat_inds) == R + T - 1 + num_treats)
-
-		treat_int_inds <- c()
-	}
+	ti <- .compute_treat_inds(
+		R = R,
+		T = T,
+		d = d,
+		num_treats = num_treats,
+		p = p
+	)
+	treat_inds <- ti$treat_inds
+	treat_int_inds <- ti$treat_int_inds
 
 	# Handle edge case where no features are selected (model_size includes intercept)
 	if (lambda_star_model_size <= 1 && all(beta_hat[2:(p + 1)] == 0)) {
-		# only intercept might be non-zero
-		if (verbose) {
-			message(
-				"No features selected (or only intercept); all treatment effects estimated to be 0."
-			)
-		}
-
-		if (q < 1) {
-			ret_se <- 0
-		} else {
-			ret_se <- NA
-		}
-
-		catt_df_to_ret <- data.frame(
-			Cohort = c_names,
-			`Estimated TE` = rep(0, R),
-			SE = rep(ret_se, R),
-			ConfIntLow = rep(ret_se, R),
-			ConfIntHigh = rep(ret_se, R),
-			check.names = FALSE
-		)
-
-		return(list(
-			in_sample_att_hat = 0,
-			in_sample_att_se = ret_se,
-			in_sample_att_se_no_prob = ret_se,
-			indep_att_hat = 0,
-			indep_att_se = ret_se,
-			catt_hats = setNames(rep(0, R), c_names),
-			catt_ses = setNames(rep(ret_se, R), c_names),
-			catt_df = catt_df_to_ret,
+		# Only the intercept might be non-zero. Delegate to the shared
+		# helper (`.build_selected_out_result()` in `R/core_funcs.R`) that
+		# also serves the no-treatment branch below and the two FETWFE
+		# early-exits. BETWFE blocks omit `theta_hat` from the return.
+		return(.build_selected_out_result(
+			message_text = "No features selected (or only intercept); all treatment effects estimated to be 0.",
+			verbose = verbose,
+			R = R,
+			c_names = c_names,
+			q = q,
 			beta_hat = beta_hat[2:(p + 1)], # Slopes are all zero
 			treat_inds = treat_inds,
 			treat_int_inds = treat_int_inds,
 			cohort_probs = cohort_probs,
 			indep_cohort_probs = indep_cohort_probs,
+			cohort_probs_overall = cohort_probs_overall,
+			indep_cohort_probs_overall = indep_cohort_probs_overall,
 			sig_eps_sq = sig_eps_sq,
 			sig_eps_c_sq = sig_eps_c_sq,
 			lambda.max = lambda.max,
@@ -866,10 +937,8 @@ betwfe_core <- function(
 			y_final = y_final,
 			N = N,
 			T = T,
-			R = R,
 			d = d,
-			p = p,
-			calc_ses = q < 1
+			p = p
 		))
 	}
 
@@ -900,46 +969,28 @@ betwfe_core <- function(
 
 	# Handle edge case where no treatment features selected
 	if (length(sel_treat_inds_shifted) == 0) {
-		if (verbose) {
-			message(
-				"No treatment features selected; all treatment effects estimated to be 0."
-			)
-		}
-
-		if (q < 1) {
-			ret_se <- 0
-		} else {
-			ret_se <- NA
-		}
-
-		catt_df_to_ret <- data.frame(
-			Cohort = c_names,
-			`Estimated TE` = rep(0, R),
-			SE = rep(ret_se, R),
-			ConfIntLow = rep(ret_se, R),
-			ConfIntHigh = rep(ret_se, R),
-			check.names = FALSE
-		)
-
+		# Apply ridge adjustment locally before early-exit return; doesn't
+		# affect later code paths (they re-compute `beta_hat` from
+		# `beta_hat_slopes` separately and run the non-early-exit
+		# `add_ridge` scaling at line ~1108). Plan D3.
 		if (add_ridge) {
 			lambda_ridge <- ifelse(is.na(lambda_ridge), 0, lambda_ridge)
 			beta_hat_slopes <- beta_hat_slopes * (1 + lambda_ridge)
 		}
 
-		return(list(
-			in_sample_att_hat = 0,
-			in_sample_att_se = ret_se,
-			in_sample_att_se_no_prob = ret_se,
-			indep_att_hat = 0,
-			indep_att_se = ret_se,
-			catt_hats = setNames(rep(0, R), c_names),
-			catt_ses = setNames(rep(ret_se, R), c_names),
-			catt_df = catt_df_to_ret,
+		return(.build_selected_out_result(
+			message_text = "No treatment features selected; all treatment effects estimated to be 0.",
+			verbose = verbose,
+			R = R,
+			c_names = c_names,
+			q = q,
 			beta_hat = beta_hat_slopes, # Untransformed slopes
 			treat_inds = treat_inds,
 			treat_int_inds = treat_int_inds,
 			cohort_probs = cohort_probs,
 			indep_cohort_probs = indep_cohort_probs,
+			cohort_probs_overall = cohort_probs_overall,
+			indep_cohort_probs_overall = indep_cohort_probs_overall,
 			sig_eps_sq = sig_eps_sq,
 			sig_eps_c_sq = sig_eps_c_sq,
 			lambda.max = lambda.max,
@@ -954,10 +1005,8 @@ betwfe_core <- function(
 			y_final = y_final,
 			N = N,
 			T = T,
-			R = R,
 			d = d,
-			p = p,
-			calc_ses = q < 1
+			p = p
 		))
 	}
 
@@ -1013,8 +1062,10 @@ betwfe_core <- function(
 		T = T,
 		fused = FALSE,
 		calc_ses = q < 1,
-		p = p, # Total number of original parameters (columns in X_ints)
-		alpha = alpha
+		include_selected = TRUE,
+		alpha = alpha,
+		se_type = se_type,
+		y_final = y_final
 	)
 
 	cohort_te_df <- res$cohort_te_df
@@ -1023,6 +1074,8 @@ betwfe_core <- function(
 	psi_mat <- res$psi_mat
 	gram_inv <- res$gram_inv
 	calc_ses <- res$calc_ses
+	sandwich_full <- res$sandwich_full
+	treat_block_mask <- res$treat_block_mask
 
 	rm(res)
 
@@ -1047,7 +1100,10 @@ betwfe_core <- function(
 		cohort_probs_overall = cohort_probs_overall, # In-sample pi_r (unconditional on treated)
 		first_inds = first_inds,
 		calc_ses = calc_ses,
-		indep_probs = FALSE
+		indep_probs = FALSE,
+		se_type = se_type,
+		sandwich_full = sandwich_full,
+		treat_block_mask = treat_block_mask
 	)
 
 	in_sample_att_hat <- in_sample_te_results$att_hat
@@ -1075,7 +1131,10 @@ betwfe_core <- function(
 			cohort_probs_overall = indep_cohort_probs_overall, # indep pi_r (unconditional)
 			first_inds = first_inds,
 			calc_ses = calc_ses,
-			indep_probs = TRUE
+			indep_probs = TRUE,
+			se_type = se_type,
+			sandwich_full = sandwich_full,
+			treat_block_mask = treat_block_mask
 		)
 
 		indep_att_hat <- indep_te_results$att_hat
@@ -1099,6 +1158,8 @@ betwfe_core <- function(
 		treat_int_inds = treat_int_inds,
 		cohort_probs = cohort_probs,
 		indep_cohort_probs = indep_cohort_probs,
+		cohort_probs_overall = cohort_probs_overall,
+		indep_cohort_probs_overall = indep_cohort_probs_overall,
 		sig_eps_sq = sig_eps_sq,
 		sig_eps_c_sq = sig_eps_c_sq,
 		lambda.max = lambda.max,

@@ -2,7 +2,7 @@
 #'
 #' `attgtToFetwfeDf()` reshapes and renames a panel dataset that is already
 #' formatted for `did::att_gt()` (Callaway and Sant'Anna 2021) so that it can be
-#' passed directly to fetwfe()` or `etwfe()` from the `fetwfe` package. In
+#' passed directly to `fetwfe()` or `etwfe()` from the `fetwfe` package. In
 #' particular, it
 #'   * creates an *absorbing‑state* treatment dummy that equals 1 from the
 #'     first treated period onward* and 0 otherwise,
@@ -17,7 +17,7 @@
 #'   never‑treated group).
 #' @param yname  Character scalar. Name of the outcome column.
 #' @param tname  Character scalar. Name of the time variable (numeric or
-#'   integer). This becomes `time` in the returned dataframe.
+#'   integer). This becomes `time_var` in the returned dataframe.
 #' @param idname Character scalar. Name of the unit identifier. Converted to
 #'   character and returned as `unit_var`.
 #' @param gname  Character scalar. Name of the *group* variable holding the
@@ -31,16 +31,20 @@
 #'   creating the treatment dummy. `fetwfe()` would do this internally, but
 #'   dropping them here keeps the returned dataframe cleaner.
 #' @param out_names  A named list giving the column names to use in the
-#'   resulting dataframe. Defaults are `list(time = "time", unit = "unit",
-#'   treatment = "treatment", response = "y")`. Override if you prefer
-#'   different names (for instance, to keep the original `yname`). The vector
+#'   resulting dataframe. Defaults are `list(time = "time_var", unit =
+#'   "unit_var", treatment = "treatment", response = "response")`. Override
+#'   if you prefer different names (for instance, to keep the original
+#'   `yname`). The vector
 #'   *must* contain exactly these four names.
+#' @param verbose Logical. If `TRUE`, a `message()` reports the count of
+#'   first-period-treated unit-period rows dropped when
+#'   `drop_first_period_treated = TRUE`. Default `FALSE` (silent).
 #'
-#' @return A `data.frame` with columns `time`, `unit`, `treatment`, `y`, and any
-#'   covariates requested in `covars`, ready to be fed to
+#' @return A `data.frame` with columns `time_var`, `unit_var`, `treatment`,
+#'   `response`, and any covariates requested in `covars`, ready to be fed to
 #'   `fetwfe()`/`etwfe()`. All required columns are of the correct type:
-#'   `time` is integer, `unit` is character, `treatment` is integer 0/1, and
-#'   `y` is numeric.
+#'   `time_var` is integer, `unit_var` is character, `treatment` is integer
+#'   0/1, and `response` is numeric.
 #' @references Callaway, Brantly and Pedro H.C. Sant'Anna. "Difference-in-
 #' Differences with Multiple Time Periods." Journal of Econometrics, Vol. 225,
 #' No. 2, pp. 200-230, 2021.
@@ -88,14 +92,16 @@ attgtToFetwfeDf <- function(
 		unit = "unit_var",
 		treatment = "treatment",
 		response = "response"
-	)
+	),
+	verbose = FALSE
 ) {
 	.fetwfe_df_core(
 		data = data,
 		vars = list(y = yname, t = tname, id = idname, g = gname),
 		covars = covars,
 		drop_first_period_treated = drop_first_period_treated,
-		out_names = out_names
+		out_names = out_names,
+		verbose = verbose
 	)
 }
 
@@ -104,7 +110,7 @@ attgtToFetwfeDf <- function(
 #'
 #' `etwfeToFetwfeDf()` reshapes and renames a panel dataset that is already
 #' formatted for `etwfe::etwfe()` (McDermott 2024) so that it can be
-#' passed directly to fetwfe()` or `etwfe()` from the `fetwfe` package. In
+#' passed directly to `fetwfe()` or `etwfe()` from the `fetwfe` package. In
 #' particular, it
 #'   * creates an *absorbing‑state* treatment dummy that equals 1 from the
 #'     first treated period onward* and 0 otherwise,
@@ -125,12 +131,15 @@ attgtToFetwfeDf <- function(
 #'   sample period be removed?  (`fetwfe()` will drop them internally anyway, but doing it
 #'   here keeps the returned dataframe clean.)  Default `TRUE`.
 #' @param out_names Named list giving the column names that the returned dataframe should have.
-#'   The default (`time`, `unit`, `treatment`, `y`) matches the arguments usually supplied to
+#'   The default (`time_var`, `unit_var`, `treatment`, `response`) matches the arguments usually supplied to
 #'   `fetwfe()`. **Do not change the *names* of this list** – only the *values* – and keep all four.
+#' @param verbose Logical. If `TRUE`, a `message()` reports the count of
+#'   first-period-treated unit-period rows dropped when
+#'   `drop_first_period_treated = TRUE`. Default `FALSE` (silent).
 #'
 #' @return A tidy `data.frame` with (in this order)
-#'   * `time`       integer,
-#'   * `unit`       character,
+#'   * `time_var`   integer,
+#'   * `unit_var`   character,
 #'   * `treatment`  integer 0/1 absorbing-state dummy,
 #'   * `response`   numeric outcome,
 #'   * any covariates requested in `covars`.
@@ -182,14 +191,16 @@ etwfeToFetwfeDf <- function(
 		unit = "unit_var",
 		treatment = "treatment",
 		response = "response"
-	)
+	),
+	verbose = FALSE
 ) {
 	.fetwfe_df_core(
 		data = data,
 		vars = list(y = yvar, t = tvar, id = idvar, g = gvar),
 		covars = covars,
 		drop_first_period_treated = drop_first_period_treated,
-		out_names = out_names
+		out_names = out_names,
+		verbose = verbose
 	)
 }
 
@@ -228,6 +239,9 @@ etwfeToFetwfeDf <- function(
 #'   in the returned data frame.  Defaults are
 #'   `list(time = "time_var", unit = "unit_var", treatment = "treatment",
 #'	 response = "response")`.
+#' @param verbose Logical. If `TRUE`, a `message()` reports the count of
+#'   first-period-treated unit-period rows dropped when
+#'   `drop_first_period_treated = TRUE`. Default `FALSE` (silent).
 #'
 #' @return A tidy `data.frame` with columns, in this order:
 #' \itemize{
@@ -263,17 +277,19 @@ etwfeToFetwfeDf <- function(
 		unit = "unit_var",
 		treatment = "treatment",
 		response = "response"
-	)
+	),
+	verbose = FALSE
 ) {
 	stopifnot(is.data.frame(data))
 	required <- unlist(vars, use.names = FALSE)
 	missing <- setdiff(c(required, covars), names(data))
-	if (length(missing))
+	if (length(missing)) {
 		stop(
 			"Column(s) not found in `data`: ",
 			paste(missing, collapse = ", "),
 			call. = FALSE
 		)
+	}
 
 	## ---------- enforce types --------------------------------------------------
 	df <- data[, unique(c(required, covars))]
@@ -281,27 +297,31 @@ etwfeToFetwfeDf <- function(
 	df[[vars$g]] <- as.integer(df[[vars$g]])
 	df[[vars$id]] <- as.character(df[[vars$id]])
 
-	if (anyNA(df[[vars$t]]))
+	if (anyNA(df[[vars$t]])) {
 		stop("Missing values in `", vars$t, "`.", call. = FALSE)
-	if (anyNA(df[[vars$g]]))
+	}
+	if (anyNA(df[[vars$g]])) {
 		stop("Missing values in `", vars$g, "`.", call. = FALSE)
+	}
 
 	## ---------- uniqueness & irreversibility ----------------------------------
 	dup_rows <- duplicated(df[, c(vars$id, vars$t)])
-	if (any(dup_rows))
+	if (any(dup_rows)) {
 		stop(
 			"Each (id, time) pair must appear at most once; found duplicates.",
 			call. = FALSE
 		)
+	}
 
 	g_const <- by(df, df[[vars$id]], function(x) length(unique(x[[vars$g]])))
-	if (any(g_const > 1))
+	if (any(g_const > 1)) {
 		stop(
 			"`",
 			vars$g,
 			"` must be constant within each unit (irreversible treatment).",
 			call. = FALSE
 		)
+	}
 
 	## ---------- drop first-period treated --------------------------------------
 	first_period <- min(df[[vars$t]])
@@ -309,11 +329,13 @@ etwfeToFetwfeDf <- function(
 		treated_first <- df[[vars$g]] != 0 & df[[vars$g]] <= first_period
 		if (any(treated_first)) {
 			df <- df[!treated_first, ]
-			message(
-				"Dropped ",
-				sum(treated_first),
-				" unit-period(s) treated in the first period."
-			)
+			if (isTRUE(verbose)) {
+				message(
+					"Dropped ",
+					sum(treated_first),
+					" unit-period(s) treated in the first period."
+				)
+			}
 		}
 	}
 
@@ -327,12 +349,13 @@ etwfeToFetwfeDf <- function(
 		df,
 		tapply(treat_dummy, df[[vars$id]], function(z) any(diff(z) < 0))
 	)
-	if (any(bad_units))
+	if (any(bad_units)) {
 		warning(
 			sum(bad_units),
 			" unit(s) switch from treated back to untreated. ",
 			"They will be dropped by `fetwfe()`."
 		)
+	}
 
 	## ---------- assemble tidy dataframe ---------------------------------------
 	res <- data.frame(
@@ -347,7 +370,9 @@ etwfeToFetwfeDf <- function(
 		use.names = FALSE
 	)
 
-	if (length(covars)) res[covars] <- df[covars]
+	if (length(covars)) {
+		res[covars] <- df[covars]
+	}
 
 	# guard against factors that slipped in
 	res[[out_names$time]] <- as.integer(res[[out_names$time]])
