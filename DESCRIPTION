@@ -1,6 +1,6 @@
 Package: fetwfe
 Title: Fused Extended Two-Way Fixed Effects
-Version: 1.10.0
+Version: 1.10.1
 Authors@R: 
     person(given = "Gregory", family = "Faletto", email = "gfaletto@gmail.com", role = c("aut", "cre"), comment = c(ORCID = "0000-0001-8298-1401"))
 Maintainer: Gregory Faletto <gfaletto@gmail.com>
@@ -16,8 +16,8 @@ Suggests: bacondecomp, knitr, rmarkdown, dplyr, did, expm, ggplot2,
         broom, lme4, testthat (>= 3.0.0), tibble
 VignetteBuilder: knitr
 NeedsCompilation: no
-Packaged: 2026-05-23 23:51:38 UTC; gregfaletto
+Packaged: 2026-11-20 07:17:07 UTC; gregfaletto
 Author: Gregory Faletto [aut, cre] (ORCID:
     <https://orcid.org/0000-0001-8298-1401>)
 Repository: CRAN
-Date/Publication: 2026-05-24 00:20:02 UTC
+Date/Publication: 2026-11-20 08:50:25 UTC
